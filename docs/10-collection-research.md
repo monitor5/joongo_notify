@@ -29,7 +29,7 @@ Disallow: /talk2
 ### 확인된 접근 경로
 - 검색 API: `api.bunjang.co.kr/api/1/find_v2.json?q=<검색어>&n=<건수>&page=<페이지>&order=date` — **무인증 JSON** 반환 (실측 확인).
 - 응답 필드: `pid`(매물 ID), `name`, `price`, `location`(구·동 단위 지역!), `update_time`(unix), `product_image`, `status`, `used`, `category_id`, `num_faved` 등 — 정규화 `Listing` 스키마에 필요한 필드 대부분이 목록 응답에 이미 포함.
-- 상세 페이지: `m.bunjang.co.kr/products/<pid>` — 본문·이미지 전체는 상세에서 획득.
+- 상세 API: `api.bunjang.co.kr/api/pms/v3/products-detail/<pid>?viewerUid=-1` — **무인증 JSON** (실측 확인). `description`(본문 전문), `price`, `condition`, `saleStatus`, `imageUrl`, `qty` 등 포함 → LLM 본문 분석 입력으로 충분.
 - 비고: `location` 필드가 있어 번개장터도 **지역 필터가 부분적으로 가능** (전국 검색 후 지역 텍스트 매칭).
 
 ### 수집 전략
@@ -134,4 +134,4 @@ cafe.naver.com robots.txt는 전 UA `Disallow: /`이며 "AI 학습·RAG 목적 �
 |---|---|---|
 | Q1 (당근 웹 커버리지) | 부분 해결 | 웹 지역 피드 수집 가능 확인. 앱 대비 커버리지는 Phase 2 표본 검증 |
 | Q2 (중고나라 카페 필요 여부) | **해결** | 카페 수집 불가 확정 → 자체 웹만 사용 |
-| Q6 (자동 채팅 가능성) | 예비 판정 | 3사 모두 완전 자동은 고위험 → **반자동(초안 생성 + 사람 발송) 권고**, 발주자 승인 필요 |
+| Q6 (자동 채팅 가능성) | **해결** | 반자동 권고는 발주자가 기각 — **완전 자동(RPA) 원안 유지 확정** (2026-07-09). 개인 이용·저빈도 전제로 계정 제재 리스크를 발주자가 인지·수용. 구현은 Phase 3(FR-D6) |

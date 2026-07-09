@@ -1,0 +1,70 @@
+"""수집 스케줄러 — 60초마다 기한 도래한 active Watch를 실행 (FR-C1)."""
+from __future__ import annotations
+
+import asyncio
+import logging
+from datetime import datetime, timedelta, timezone
+
+from .adapters import BunjangAdapter
+from .adapters.base import CollectorAdapter
+from .catalog import Catalog
+from .config import Config
+from .db import Database
+from .models import Watch
+from .notify.base import ConsoleNotifier, Notifier
+from .notify.telegram import TelegramNotifier
+from .pipeline.runner import run_watch_cycle
+
+logger = logging.getLogger("joongo_notify")
+
+TICK_SECONDS = 60
+
+
+def build_adapters(config: Config) -> list[CollectorAdapter]:
+    # Phase 2에서 당근마켓·중고나라 어댑터 추가 (FR-C0: 여기만 늘리면 됨)
+    return [BunjangAdapter(config.collect)]
+
+
+def build_notifier(config: Config, db: Database) -> Notifier:
+    if config.telegram.enabled and config.telegram.token:
+        return TelegramNotifier(config.telegram, db)
+    return ConsoleNotifier()
+
+
+def is_due(watch: Watch, now: datetime, min_interval: int) -> bool:
+    if watch.status != "active":
+        return False
+    if not watch.last_run_at:
+        return True
+    interval = max(watch.interval_minutes, min_interval)  # 최소 주기 강제 (FR-C1 AC)
+    last = datetime.fromisoformat(watch.last_run_at)
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=timezone.utc)
+    return now >= last + timedelta(minutes=interval)
+
+
+async def scheduler_loop(config: Config, db: Database, catalog: Catalog) -> None:
+    adapters = build_adapters(config)
+    notifier = build_notifier(config, db)
+    logger.info("스케줄러 시작 (tick=%ds, 기본 주기 %d분)", TICK_SECONDS, config.collect.default_interval_minutes)
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            for watch in db.list_watches(status="active"):
+                if is_due(watch, now, config.collect.min_interval_minutes):
+                    await run_watch_cycle(watch, adapters, catalog, db, config, notifier)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("스케줄러 tick 실패")  # 한 tick 실패가 루프를 죽이지 않게 (NFR-6)
+        await asyncio.sleep(TICK_SECONDS)
+
+
+async def run_once(config: Config, db: Database, catalog: Catalog, watch_id: int | None = None) -> None:
+    """CLI: 모든(또는 지정) Watch를 즉시 1회 실행."""
+    adapters = build_adapters(config)
+    notifier = build_notifier(config, db)
+    watches = [db.get_watch(watch_id)] if watch_id else db.list_watches(status="active")
+    for watch in watches:
+        if watch:
+            await run_watch_cycle(watch, adapters, catalog, db, config, notifier)

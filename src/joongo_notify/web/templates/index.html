@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>Watch 목록</h3>
+{% if not watches %}<p>등록된 Watch가 없습니다. <a href="/watches/new">첫 Watch를 등록</a>하세요.</p>{% endif %}
+{% if watches %}
+<table>
+<tr><th>이름</th><th>제품</th><th>가격</th><th>지역</th><th>주기</th><th>임계</th><th>상태</th><th>마지막 실행</th><th></th></tr>
+{% for w in watches %}
+<tr>
+  <td>{{ w.name }}</td>
+  <td>{{ products[w.product_id].name if w.product_id in products else w.product_id }}</td>
+  <td>{{ "{:,}".format(w.price_min) if w.price_min else "" }}~{{ "{:,}".format(w.price_max) if w.price_max else "" }}원</td>
+  <td>{{ w.region or "전국" }}</td>
+  <td>{{ w.interval_minutes }}분</td>
+  <td>{{ w.threshold }}점</td>
+  <td><span class="badge {{ w.status }}">{{ "감시중" if w.status == "active" else "일시정지" }}</span></td>
+  <td>{{ w.last_run_at or "-" }}</td>
+  <td>
+    {% if w.status == "active" %}
+    <form class="inline" method="post" action="/watches/{{ w.id }}/pause"><button>정지</button></form>
+    {% else %}
+    <form class="inline" method="post" action="/watches/{{ w.id }}/resume"><button>재개</button></form>
+    {% endif %}
+    <form class="inline" method="post" action="/watches/{{ w.id }}/delete"
+          onsubmit="return confirm('삭제할까요? 매칭 이력도 삭제됩니다.')"><button>삭제</button></form>
+  </td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+
+<h3>최근 매칭</h3>
+<p style="font-size:13px">수집 {{ stats.listings }}건 · 분석 {{ stats.reports }}건 · 매칭 {{ stats.matches }}건 · 알림 {{ stats.notified }}건</p>
+{% if not matches %}<p>아직 매칭된 매물이 없습니다.</p>{% endif %}
+{% if matches %}
+<table>
+<tr><th>점수</th><th>Watch</th><th>매물</th><th>가격</th><th>지역</th><th>판정</th><th>알림</th></tr>
+{% for m in matches %}
+<tr>
+  <td class="score">{{ m.score }}</td>
+  <td>{{ m.watch_name }}</td>
+  <td><a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title[:40] }}</a></td>
+  <td>{{ "{:,}".format(m.price) if m.price else "?" }}원</td>
+  <td>{{ m.region or "-" }}</td>
+  <td>
+    {% for v in m.verdicts %}
+      {% if v.outcome == "satisfied" %}✅{% elif v.outcome == "violated" %}❌{% else %}❓{% endif %}{{ v.attribute_name }}
+    {% endfor %}
+  </td>
+  <td>{{ "✔" if m.notified_at else "-" }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

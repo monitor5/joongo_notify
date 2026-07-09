@@ -28,6 +28,31 @@
 | [docs/03-document-index.md](docs/03-document-index.md) | 문서 정의서 — 제작에 필요한 전체 문서 목록과 각 문서의 목적/작성 시점 |
 | [docs/10-collection-research.md](docs/10-collection-research.md) | 플랫폼 수집 조사서 — 3사 robots.txt 실측, 접근 경로 판정, 자동 채팅 리스크 평가 |
 
+## 설치와 실행 (Phase 1 MVP)
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e ".[dev]"
+
+# 1) 설정: 예시 복사 후 로그인 비밀번호 해시 생성
+cp config.example.yaml config.yaml
+.venv/bin/joongo-notify hash-password   # 출력값을 config.yaml의 auth.password_hash에
+
+# 2) 실행 (웹 UI + 수집 스케줄러)
+.venv/bin/joongo-notify serve           # http://127.0.0.1:8320
+
+# 즉시 1회 수집 (스케줄러 없이)
+.venv/bin/joongo-notify once
+# 통계
+.venv/bin/joongo-notify stats
+# 테스트
+.venv/bin/python -m pytest
+```
+
+- **LLM 분석**: 기본은 온톨로지 기반 휴리스틱 추출기. Ollama를 띄우고 `llm.enabled: true` + `llm.model` 지정 시 LLM 추출로 전환 (실패 시 휴리스틱 폴백).
+- **텔레그램 알림**: `telegram.enabled: true` + 토큰 설정 후, 웹 [설정]에서 chat_id 등록(테스트 발송 포함). 미설정 시 콘솔 출력.
+- **제품/조건 추가**: `data/products.yaml`(별칭 사전), `data/categories.yaml`(상태 속성) 수정만으로 가능 — 코드 변경 불필요.
+
 ## 현재 상태
 
-기획 단계. 코드 작성 전 문서 확정이 목표.
+**Phase 1 MVP 구현 완료** — 번개장터 수집, 별칭 필터, 본문 상태 추출(휴리스틱/Ollama), 스코어링, 웹 UI(자체 인증), 텔레그램 알림. 실매물 대상 엔드투엔드 검증 완료.
+Phase 2 예정: 당근마켓·중고나라 어댑터, VL 사진 검증, 교차 플랫폼 중복 제거.

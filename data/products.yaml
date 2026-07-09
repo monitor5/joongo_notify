@@ -1,0 +1,73 @@
+# 제품 카탈로그 + 별칭 사전 (FR-B3)
+# aliases: 한/영/축약 표기 변형. 매칭은 정규화(공백·구분자 제거, 소문자화) 후 부분 문자열.
+# exclude_keywords: 제목에 이 단어가 있으면 탈락 (케이스/필름 등 액세서리 오탐 방지)
+products:
+  - id: iphone-14-pro
+    name: iPhone 14 Pro
+    category: smartphone
+    aliases:
+      - 아이폰 14 프로
+      - 아이폰14프로
+      - 아이폰 14pro
+      - ip14p
+      - 아이폰 14 pro
+    exclude_keywords: &phone_excludes
+      - 케이스
+      - 필름
+      - 커버
+      - 스트랩
+      - 거치대
+      - 충전기
+      - 케이블
+      - 수리
+      - 부품용
+      - 액정만
+      - 맥세이프
+
+  - id: iphone-15-pro
+    name: iPhone 15 Pro
+    category: smartphone
+    aliases:
+      - 아이폰 15 프로
+      - 아이폰15프로
+      - 아이폰 15pro
+      - ip15p
+    exclude_keywords: *phone_excludes
+
+  - id: galaxy-s24-ultra
+    name: Galaxy S24 Ultra
+    category: smartphone
+    aliases:
+      - 갤럭시 S24 울트라
+      - 갤럭시s24울트라
+      - s24 울트라
+      - s24u
+      - 갤s24울트라
+    exclude_keywords: *phone_excludes
+
+  - id: lg-oled-c3-42
+    name: LG OLED 42C3
+    category: monitor
+    aliases:
+      - 42C3
+      - LG C3 42
+      - 올레드 42인치 C3
+    exclude_keywords:
+      - 스탠드만
+      - 리모컨
+      - 부품
+
+  - id: macbook-air-m2
+    name: MacBook Air M2
+    category: laptop
+    aliases:
+      - 맥북 에어 M2
+      - 맥북에어 m2
+      - 맥에어 m2
+      - macbook air m2
+    exclude_keywords:
+      - 케이스
+      - 파우치
+      - 충전기
+      - 키스킨
+      - 부품용

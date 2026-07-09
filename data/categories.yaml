@@ -1,0 +1,86 @@
+# 카테고리/상태 속성 온톨로지 (FR-B1, FR-B2)
+# - 모든 열거형 속성은 "언급없음"을 암묵값으로 가진다 (본문에 topic이 없으면 언급없음).
+# - patterns: 휴리스틱 추출기가 topic이 등장한 문장에서 값을 판정할 때 쓰는 단서.
+#   위에서부터 먼저 매칭된 값이 채택되므로 부정("없") 계열을 앞에 둔다.
+# - visual: true → Phase 2에서 VL 사진 검증 대상 (FR-C3)
+categories:
+  - id: electronics
+    name: 전자제품
+    parent: null
+    attributes: []
+
+  - id: smartphone
+    name: 스마트폰
+    parent: electronics
+    attributes: &display_device_attrs
+      - id: burn_in
+        name: 번인
+        type: enum
+        visual: true
+        topics: ["번인", "잔상", "burn"]
+        values:
+          - value: 없음
+            patterns: ["없", "無", "x", "ㄴㄴ", "안보", "안 보", "발견되지 않"]
+          - value: 약함
+            patterns: ["약간", "살짝", "조금", "미세", "옅", "희미"]
+          - value: 심함
+            patterns: ["심", "많이", "진하", "뚜렷"]
+          - value: 있음
+            patterns: ["있", "有", "보임", "보입"]
+      - id: scratch
+        name: 외관기스
+        type: enum
+        visual: true
+        topics: ["기스", "스크래치", "흠집", "찍힘", "파손", "깨짐", "금감", "외관"]
+        values:
+          - value: 없음
+            patterns: ["없", "무", "x", "깨끗", "새것", "S급", "s급", "미개봉"]
+          - value: 생활기스
+            patterns: ["생활", "잔기스", "미세", "살짝", "약간", "조금"]
+          - value: 눈에띔
+            patterns: ["눈에", "제법", "꽤", "많"]
+          - value: 파손
+            patterns: ["파손", "깨짐", "깨져", "금감", "금이", "박살"]
+          - value: 있음
+            patterns: ["있", "有"]
+      - id: battery
+        name: 배터리효율
+        type: number
+        visual: false
+        topics: ["배터리", "밧데리", "효율", "성능 상태"]
+        values: []
+      - id: water_damage
+        name: 침수이력
+        type: enum
+        visual: false
+        topics: ["침수"]
+        values:
+          - value: 없음
+            patterns: ["없", "무", "x"]
+          - value: 있음
+            patterns: ["있", "이력"]
+      - id: full_box
+        name: 구성품(풀박스)
+        type: enum
+        visual: true
+        topics: ["풀박", "풀 박스", "박스", "구성품", "충전기", "정품 케이블"]
+        values:
+          - value: 풀박스
+            patterns: ["풀박", "풀 박스", "모두 있", "전부 있", "다 있"]
+          - value: 일부
+            patterns: ["박스만", "충전기만", "일부", "본체만"]
+          - value: 없음
+            patterns: ["없", "단품", "본체 단품"]
+          - value: 있음
+            patterns: ["있"]
+
+  - id: monitor
+    name: 모니터
+    parent: electronics
+    # 스마트폰과 동일 속성 세트로 시작 (번인/기스/구성품이 핵심). Phase 2에서 분화.
+    attributes: *display_device_attrs
+
+  - id: laptop
+    name: 노트북
+    parent: electronics
+    attributes: *display_device_attrs

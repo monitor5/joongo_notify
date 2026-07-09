@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>joongo_notify</title>
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, "Malgun Gothic", sans-serif; max-width: 880px; margin: 0 auto; padding: 16px; line-height: 1.5; }
+header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #8884; padding-bottom: 8px; margin-bottom: 16px; }
+header nav a { margin-right: 12px; text-decoration: none; }
+table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+th, td { border: 1px solid #8884; padding: 6px 8px; text-align: left; font-size: 14px; }
+.badge { padding: 1px 8px; border-radius: 10px; font-size: 12px; background: #8882; }
+.badge.active { background: #2a72; }
+.badge.paused { background: #a622; }
+button { cursor: pointer; }
+form.inline { display: inline; }
+fieldset { margin: 10px 0; border: 1px solid #8884; border-radius: 6px; }
+.error { color: #c33; }
+.msg { color: #282; }
+input[type=text], input[type=number], input[type=password], select { padding: 4px 6px; }
+.score { font-weight: bold; }
+</style>
+</head>
+<body>
+<header>
+  <strong>🔔 joongo_notify</strong>
+  <nav>
+    <a href="/">대시보드</a>
+    <a href="/watches/new">Watch 등록</a>
+    <a href="/settings">설정</a>
+    <a href="/health">상태</a>
+    <form class="inline" method="post" action="/logout"><button>로그아웃</button></form>
+  </nav>
+</header>
+{% block content %}{% endblock %}
+</body>
+</html>

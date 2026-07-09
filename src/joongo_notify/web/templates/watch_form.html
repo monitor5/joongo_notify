@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>Watch 등록</h3>
+<form method="post" action="/watches">
+  <fieldset>
+    <legend>① 제품</legend>
+    <label>제품 선택
+      <select name="product_id" id="product_id" required onchange="showAttrs()">
+        <option value="">-- 선택 --</option>
+        {% for p in products %}
+        <option value="{{ p.id }}" data-category="{{ p.category_id }}">{{ p.name }} ({{ categories[p.category_id].name }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Watch 이름 (선택) <input type="text" name="name" placeholder="예: 아이폰14프로 번인없는거"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>② 상태 조건 — 허용할 값을 체크 (체크 안 한 속성은 조건에서 제외)</legend>
+    {% for cat_id, cat in categories.items() %}
+      {% if cat.attributes %}
+      <div class="attrs" id="attrs-{{ cat_id }}" style="display:none">
+        {% for attr in cat.attributes %}
+        <div style="margin:8px 0">
+          <strong>{{ attr.name }}</strong>
+          <label style="margin-left:8px"><input type="checkbox" name="req_{{ attr.id }}"> 필수 조건</label><br>
+          {% if attr.type == "number" %}
+            최소값: <input type="number" name="cond_{{ attr.id }}_min" min="0" max="100" style="width:70px"> % 이상
+          {% else %}
+            {% for av in attr.values %}
+            <label style="margin-right:10px"><input type="checkbox" name="cond_{{ attr.id }}" value="{{ av.value }}"> {{ av.value }}</label>
+            {% endfor %}
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>③ 가격 · ④ 지역 · 운영</legend>
+    <label>최소가 <input type="number" name="price_min" min="0" step="1000"> 원</label>
+    <label>최대가 <input type="number" name="price_max" min="0" step="1000"> 원</label><br>
+    <label>지역 필터 (선택, 예: "서울" — 매물 지역 텍스트 포함 매칭) <input type="text" name="region"></label><br>
+    <label>수집 주기 <input type="number" name="interval_minutes" value="{{ default_interval }}" min="{{ min_interval }}"> 분 (최소 {{ min_interval }}분)</label>
+    <label>알림 임계 점수 <input type="number" name="threshold" value="{{ default_threshold }}" min="0" max="100"></label>
+  </fieldset>
+
+  <button>⑤ 등록</button>
+</form>
+
+<script>
+function showAttrs() {
+  document.querySelectorAll('.attrs').forEach(el => el.style.display = 'none');
+  const select = document.getElementById('product_id');
+  const option = select.options[select.selectedIndex];
+  if (!option || !option.dataset.category) return;
+  const el = document.getElementById('attrs-' + option.dataset.category);
+  if (el) el.style.display = 'block';
+}
+</script>
+{% endblock %}
