@@ -26,6 +26,7 @@
 | [docs/01-project-plan.md](docs/01-project-plan.md) | 프로젝트 계획서 — 목표, 아키텍처, 기술 선택, 단계별 로드맵 |
 | [docs/02-functional-requirements.md](docs/02-functional-requirements.md) | 기능 요구서 — 기능/비기능 요구사항, 수용 기준 |
 | [docs/03-document-index.md](docs/03-document-index.md) | 문서 정의서 — 제작에 필요한 전체 문서 목록과 각 문서의 목적/작성 시점 |
+| [docs/10-collection-research.md](docs/10-collection-research.md) | 플랫폼 수집 조사서 — 3사 robots.txt 실측, 접근 경로 판정, 자동 채팅 리스크 평가 |
 
 ## 현재 상태
 
