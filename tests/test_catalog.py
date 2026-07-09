@@ -29,6 +29,9 @@ def test_alias_matching_variants(catalog):
 def test_alias_no_false_positive(catalog):
     assert not catalog.matches("iphone-14-pro", "아이폰 15 프로 팝니다")
     assert not catalog.matches("iphone-14-pro", "갤럭시 S24 울트라")
+    # 상위 모델 오탐 방지 (라이브 검증에서 발견: 프로 별칭이 프로맥스에 걸림)
+    assert not catalog.matches("iphone-14-pro", "아이폰14프로맥스 256G 딥퍼플 SS급!")
+    assert not catalog.matches("iphone-14-pro", "아이폰 14 Pro Max 팝니다")
 
 
 def test_exclude_keywords_reject_accessories(catalog):

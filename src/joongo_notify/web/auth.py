@@ -34,26 +34,30 @@ def verify_password(password: str, stored: str) -> bool:
 
 
 class LoginGuard:
-    """로그인 실패 N회 → 일시 잠금 (FR-A1 AC)."""
+    """로그인 실패 N회 → 일시 잠금 (FR-A1 AC).
+
+    클라이언트(IP)별로 집계한다 — 전역 카운터면 외부의 실패 시도가
+    소유자 본인을 잠그는 로그인 DoS가 되기 때문.
+    """
 
     def __init__(self, max_failures: int, lockout_minutes: int):
         self.max_failures = max_failures
         self.lockout_seconds = lockout_minutes * 60
-        self._failures = 0
-        self._locked_until = 0.0
+        self._failures: dict[str, int] = {}
+        self._locked_until: dict[str, float] = {}
 
-    def is_locked(self) -> bool:
-        return time.monotonic() < self._locked_until
+    def is_locked(self, key: str) -> bool:
+        return time.monotonic() < self._locked_until.get(key, 0.0)
 
-    def record_failure(self) -> None:
-        self._failures += 1
-        if self._failures >= self.max_failures:
-            self._locked_until = time.monotonic() + self.lockout_seconds
-            self._failures = 0
+    def record_failure(self, key: str) -> None:
+        self._failures[key] = self._failures.get(key, 0) + 1
+        if self._failures[key] >= self.max_failures:
+            self._locked_until[key] = time.monotonic() + self.lockout_seconds
+            self._failures[key] = 0
 
-    def record_success(self) -> None:
-        self._failures = 0
-        self._locked_until = 0.0
+    def record_success(self, key: str) -> None:
+        self._failures.pop(key, None)
+        self._locked_until.pop(key, None)
 
 
 class SessionManager:

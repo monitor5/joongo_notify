@@ -1,6 +1,17 @@
 # 제품 카탈로그 + 별칭 사전 (FR-B3)
 # aliases: 한/영/축약 표기 변형. 매칭은 정규화(공백·구분자 제거, 소문자화) 후 부분 문자열.
 # exclude_keywords: 제목에 이 단어가 있으면 탈락 (케이스/필름 등 액세서리 오탐 방지)
+
+# 전 제품 공통 제외어 — 판매글이 아닌 구매 희망/매입 업자 글 필터
+global_exclude_keywords:
+  - 삽니다
+  - 구합니다
+  - 구매합니다
+  - 매입
+  - 삽니당
+  - 구해요
+  - 구매원해요
+
 products:
   - id: iphone-14-pro
     name: iPhone 14 Pro
@@ -12,6 +23,12 @@ products:
       - ip14p
       - 아이폰 14 pro
     exclude_keywords: &phone_excludes
+      # 상위 모델 오탐 방지 — 별칭이 부분 문자열 매칭이라 "…프로" Watch가 "…프로맥스"에 걸림
+      # (라이브 검증에서 발견. Pro Max를 원하면 별도 제품으로 등록)
+      - 프로맥스
+      - 프로 맥스
+      - promax
+      - pro max
       - 케이스
       - 필름
       - 커버

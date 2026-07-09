@@ -93,6 +93,7 @@ class Listing:
     images: list[str]
     posted_at: str | None
     collected_at: str = field(default_factory=utcnow_iso)
+    detail_fetched: bool = False  # 본문·이미지 확보 여부 — 확보 전에는 분석하지 않음
     raw: dict = field(default_factory=dict)
 
 

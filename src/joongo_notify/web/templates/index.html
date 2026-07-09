@@ -9,7 +9,7 @@
 <tr>
   <td>{{ w.name }}</td>
   <td>{{ products[w.product_id].name if w.product_id in products else w.product_id }}</td>
-  <td>{{ "{:,}".format(w.price_min) if w.price_min else "" }}~{{ "{:,}".format(w.price_max) if w.price_max else "" }}원</td>
+  <td>{{ "{:,}".format(w.price_min) if w.price_min is not none else "" }}~{{ "{:,}".format(w.price_max) if w.price_max is not none else "" }}원</td>
   <td>{{ w.region or "전국" }}</td>
   <td>{{ w.interval_minutes }}분</td>
   <td>{{ w.threshold }}점</td>
@@ -40,7 +40,7 @@
   <td class="score">{{ m.score }}</td>
   <td>{{ m.watch_name }}</td>
   <td><a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title[:40] }}</a></td>
-  <td>{{ "{:,}".format(m.price) if m.price else "?" }}원</td>
+  <td>{{ "{:,}".format(m.price) if m.price is not none else "?" }}원</td>
   <td>{{ m.region or "-" }}</td>
   <td>
     {% for v in m.verdicts %}

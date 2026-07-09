@@ -6,6 +6,7 @@ import logging
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -22,6 +23,18 @@ logger = logging.getLogger("joongo_notify")
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 SESSION_COOKIE = "joongo_session"
+
+
+class NotAuthenticated(Exception):
+    """미인증 접근 — 전역 핸들러가 /login으로 리다이렉트한다.
+
+    require_login이 응답 객체를 반환하는 대신 예외를 던지므로,
+    보호 라우트에서 가드 체크를 잊는 것이 구조적으로 불가능하다.
+    """
+
+
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
 
 
 def create_app(
@@ -57,24 +70,27 @@ def create_app(
     app.state.config = config
 
     # ---- 인증 ----------------------------------------------------------
-    def current_user(request: Request) -> str | None:
-        return sessions.verify(request.cookies.get(SESSION_COOKIE))
-
-    def require_login(request: Request) -> str | RedirectResponse:
-        user = current_user(request)
+    def require_login(request: Request) -> str:
+        user = sessions.verify(request.cookies.get(SESSION_COOKIE))
         if not user:
-            return RedirectResponse("/login", status_code=303)
+            raise NotAuthenticated()
         return user
+
+    @app.exception_handler(NotAuthenticated)
+    async def _redirect_to_login(request: Request, exc: NotAuthenticated):
+        return RedirectResponse("/login", status_code=303)
 
     @app.get("/login", response_class=HTMLResponse)
     async def login_page(request: Request):
         return templates.TemplateResponse(
-            request, "login.html", {"error": None, "locked": guard.is_locked()}
+            request, "login.html",
+            {"error": None, "locked": guard.is_locked(_client_key(request))},
         )
 
     @app.post("/login")
     async def login(request: Request, username: str = Form(...), password: str = Form(...)):
-        if guard.is_locked():
+        key = _client_key(request)
+        if guard.is_locked(key):
             return templates.TemplateResponse(
                 request, "login.html", {"error": "잠시 후 다시 시도하세요 (잠금)", "locked": True},
                 status_code=429,
@@ -82,17 +98,17 @@ def create_app(
         if username == config.auth.username and verify_password(
             password, config.auth.password_hash
         ):
-            guard.record_success()
+            guard.record_success(key)
             response = RedirectResponse("/", status_code=303)
             response.set_cookie(
                 SESSION_COOKIE, sessions.issue(username),
                 httponly=True, samesite="lax", max_age=60 * 60 * 24 * 14,
             )
             return response
-        guard.record_failure()
+        guard.record_failure(key)
         return templates.TemplateResponse(
             request, "login.html",
-            {"error": "아이디 또는 비밀번호가 올바르지 않습니다", "locked": guard.is_locked()},
+            {"error": "아이디 또는 비밀번호가 올바르지 않습니다", "locked": guard.is_locked(key)},
             status_code=401,
         )
 
@@ -104,9 +120,7 @@ def create_app(
 
     # ---- 화면 ----------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def index(request: Request, user: str = Depends(require_login)):
         return templates.TemplateResponse(
             request, "index.html",
             {
@@ -118,9 +132,7 @@ def create_app(
         )
 
     @app.get("/watches/new", response_class=HTMLResponse)
-    async def watch_form(request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def watch_form(request: Request, user: str = Depends(require_login)):
         return templates.TemplateResponse(
             request, "watch_form.html",
             {
@@ -133,9 +145,7 @@ def create_app(
         )
 
     @app.post("/watches")
-    async def create_watch(request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def create_watch(request: Request, user: str = Depends(require_login)):
         form = await request.form()
         product_id = str(form.get("product_id", ""))
         product = catalog.products.get(product_id)
@@ -159,20 +169,23 @@ def create_app(
                 )
             )
 
-        def _int_or_none(key: str) -> int | None:
+        def _int_or_default(key: str, default: int | None) -> int | None:
+            """0을 유효값으로 보존 (`or default`의 falsy-zero 함정 회피)."""
             value = str(form.get(key, "")).strip()
-            return int(value) if value.isdigit() else None
+            return int(value) if value.isdigit() else default
 
-        interval = _int_or_none("interval_minutes") or config.collect.default_interval_minutes
+        interval = _int_or_default(
+            "interval_minutes", config.collect.default_interval_minutes
+        )
         interval = max(interval, config.collect.min_interval_minutes)  # FR-C1 AC
-        threshold = _int_or_none("threshold") or config.scoring.default_threshold
+        threshold = _int_or_default("threshold", config.scoring.default_threshold)
 
         watch = Watch(
             id=None,
             product_id=product_id,
             name=str(form.get("name") or product.name),
-            price_min=_int_or_none("price_min"),
-            price_max=_int_or_none("price_max"),
+            price_min=_int_or_default("price_min", None),
+            price_max=_int_or_default("price_max", None),
             region=str(form.get("region", "")).strip() or None,
             interval_minutes=interval,
             threshold=threshold,
@@ -182,31 +195,23 @@ def create_app(
         return RedirectResponse("/", status_code=303)
 
     @app.post("/watches/{watch_id}/pause")
-    async def pause_watch(watch_id: int, request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def pause_watch(watch_id: int, user: str = Depends(require_login)):
         db.set_watch_status(watch_id, "paused")
         return RedirectResponse("/", status_code=303)
 
     @app.post("/watches/{watch_id}/resume")
-    async def resume_watch(watch_id: int, request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def resume_watch(watch_id: int, user: str = Depends(require_login)):
         db.set_watch_status(watch_id, "active")
         return RedirectResponse("/", status_code=303)
 
     @app.post("/watches/{watch_id}/delete")
-    async def delete_watch(watch_id: int, request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def delete_watch(watch_id: int, user: str = Depends(require_login)):
         db.delete_watch(watch_id)
         return RedirectResponse("/", status_code=303)
 
     # ---- 설정 (FR-A1b: 텔레그램 채널 연결) --------------------------------
     @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def settings_page(request: Request, user: str = Depends(require_login)):
         return templates.TemplateResponse(
             request, "settings.html",
             {
@@ -217,9 +222,7 @@ def create_app(
         )
 
     @app.post("/settings/telegram")
-    async def save_telegram(request: Request, user=Depends(require_login), chat_id: str = Form("")):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def save_telegram(user: str = Depends(require_login), chat_id: str = Form("")):
         db.set_setting("telegram_chat_id", chat_id.strip())
         message = "저장되었습니다"
         if config.telegram.enabled and config.telegram.token and chat_id.strip():
@@ -229,13 +232,11 @@ def create_app(
                 message = "저장 및 테스트 알림 발송 완료"  # FR-A1b AC
             except Exception as exc:
                 message = f"저장됨 — 테스트 발송 실패: {exc}"
-        return RedirectResponse(f"/settings?message={message}", status_code=303)
+        return RedirectResponse(f"/settings?message={quote(message)}", status_code=303)
 
     # ---- 상태 (FR-D4) ---------------------------------------------------
     @app.get("/health")
-    async def health(request: Request, user=Depends(require_login)):
-        if isinstance(user, RedirectResponse):
-            return user
+    async def health(user: str = Depends(require_login)):
         return {"adapters": db.adapter_health(), "stats": db.stats()}
 
     return app

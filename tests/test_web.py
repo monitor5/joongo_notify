@@ -102,6 +102,34 @@ async def test_pause_resume_delete(logged_in, db):
     assert db.get_watch(watch_id) is None
 
 
+async def test_threshold_zero_preserved(logged_in, db):
+    """임계 0(모든 매칭 알림)이 기본값으로 대체되지 않는다 (falsy-zero 회귀)."""
+    await logged_in.post(
+        "/watches",
+        data={"product_id": "iphone-14-pro", "name": "z", "threshold": "0"},
+    )
+    assert db.list_watches()[0].threshold == 0
+
+
+def test_get_setting_empty_falls_back_to_default(db):
+    """빈 설정값이 config 기본값을 가리지 않는다."""
+    db.set_setting("telegram_chat_id", "")
+    assert db.get_setting("telegram_chat_id", "default-id") == "default-id"
+    db.set_setting("telegram_chat_id", "12345")
+    assert db.get_setting("telegram_chat_id", "default-id") == "12345"
+
+
+def test_login_guard_is_per_client():
+    """한 클라이언트의 실패가 다른 클라이언트를 잠그지 않는다 (로그인 DoS 방지)."""
+    from joongo_notify.web.auth import LoginGuard
+
+    guard = LoginGuard(max_failures=3, lockout_minutes=10)
+    for _ in range(3):
+        guard.record_failure("attacker")
+    assert guard.is_locked("attacker")
+    assert not guard.is_locked("owner")
+
+
 async def test_unknown_product_rejected(logged_in):
     resp = await logged_in.post("/watches", data={"product_id": "no-such"})
     assert resp.status_code == 400

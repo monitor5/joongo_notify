@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS listings (
     images_json TEXT NOT NULL DEFAULT '[]',
     posted_at TEXT,
     collected_at TEXT NOT NULL,
+    detail_fetched INTEGER NOT NULL DEFAULT 0,
     raw_json TEXT NOT NULL DEFAULT '{}',
     UNIQUE (platform, platform_id)
 );
@@ -171,8 +172,8 @@ class Database:
             return int(row["id"]), False
         cur = self.conn.execute(
             """INSERT INTO listings (platform, platform_id, url, title, description, price,
-                   region, images_json, posted_at, collected_at, raw_json)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   region, images_json, posted_at, collected_at, detail_fetched, raw_json)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 listing.platform,
                 listing.platform_id,
@@ -184,11 +185,23 @@ class Database:
                 json.dumps(listing.images, ensure_ascii=False),
                 listing.posted_at,
                 listing.collected_at,
+                int(listing.detail_fetched),
                 json.dumps(listing.raw, ensure_ascii=False),
             ),
         )
         self.conn.commit()
         return int(cur.lastrowid), True
+
+    def update_listing_detail(
+        self, listing_id: int, description: str, price: int | None, images: list[str]
+    ) -> None:
+        """상세 조회 성공분 반영. detail_fetched=1이 되어 이후 재조회하지 않는다."""
+        self.conn.execute(
+            """UPDATE listings SET description=?, price=COALESCE(?, price),
+                   images_json=?, detail_fetched=1 WHERE id=?""",
+            (description, price, json.dumps(images, ensure_ascii=False), listing_id),
+        )
+        self.conn.commit()
 
     def get_listing(self, listing_id: int) -> Listing | None:
         row = self.conn.execute("SELECT * FROM listings WHERE id=?", (listing_id,)).fetchone()
@@ -206,6 +219,7 @@ class Database:
             images=json.loads(row["images_json"]),
             posted_at=row["posted_at"],
             collected_at=row["collected_at"],
+            detail_fetched=bool(row["detail_fetched"]),
             raw=json.loads(row["raw_json"]),
         )
 
@@ -267,6 +281,26 @@ class Database:
         self.conn.commit()
         return True
 
+    def unnotified_matches(self, watch_id: int) -> list[MatchResult]:
+        """통과했지만 발송되지 않은 매칭 (발송 실패 재시도용 — FR-D1)."""
+        rows = self.conn.execute(
+            """SELECT * FROM match_results
+               WHERE watch_id=? AND passed=1 AND notified_at IS NULL""",
+            (watch_id,),
+        ).fetchall()
+        return [
+            MatchResult(
+                watch_id=r["watch_id"],
+                listing_id=r["listing_id"],
+                score=r["score"],
+                passed=bool(r["passed"]),
+                verdicts=[ConditionVerdict(**v) for v in json.loads(r["verdicts_json"])],
+                created_at=r["created_at"],
+                notified_at=r["notified_at"],
+            )
+            for r in rows
+        ]
+
     def mark_notified(self, watch_id: int, listing_id: int) -> None:
         self.conn.execute(
             "UPDATE match_results SET notified_at=? WHERE watch_id=? AND listing_id=?",
@@ -316,7 +350,8 @@ class Database:
     # ---- settings ------------------------------------------------------
     def get_setting(self, key: str, default: str = "") -> str:
         row = self.conn.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
-        return row["value"] if row else default
+        # 빈 값은 미설정으로 취급 — 빈 값이 config/env 기본값을 영구히 가리는 사고 방지
+        return row["value"] if row and row["value"] else default
 
     def set_setting(self, key: str, value: str) -> None:
         self.conn.execute(

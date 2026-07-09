@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 import httpx
@@ -65,8 +66,10 @@ def parse_detail(raw: RawListing, data: dict) -> RawListing:
     if price is not None:
         raw.price = price
     image_url = product.get("imageUrl")
-    image_count = product.get("imageCount") or 1
-    if image_url:
+    image_count = product.get("imageCount")
+    if image_count is None:
+        image_count = 1 if image_url else 0
+    if image_url and int(image_count) > 0:  # imageCount=0이면 이미지 URL을 만들지 않음
         raw.images = [
             str(image_url).replace("{cnt}", str(i)).replace("{res}", IMAGE_RES)
             for i in range(1, min(int(image_count), 5) + 1)
@@ -80,26 +83,44 @@ def parse_detail(raw: RawListing, data: dict) -> RawListing:
     return raw
 
 
+BACKOFF_DELAYS = [2.0, 4.0, 8.0, 16.0]  # NFR-3 지수 백오프 (10번 문서 §8)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return isinstance(exc, httpx.TransportError)
+
+
 class BunjangAdapter:
     platform = "bunjang"
 
     def __init__(self, config: CollectConfig, client: httpx.AsyncClient | None = None):
         self.config = config
         self.limiter = RateLimiter(config)
-        self._client = client
+        # 프로세스 수명 동안 연결 풀 재사용 (요청마다 TLS 핸드셰이크 방지)
+        self._client = client or httpx.AsyncClient(timeout=30.0)
 
     def _headers(self) -> dict:
         return {"User-Agent": self.config.user_agent}
 
     async def _get_json(self, url: str, params: dict | None = None) -> dict:
-        await self.limiter.wait()
-        if self._client is not None:
-            resp = await self._client.get(url, params=params, headers=self._headers())
-        else:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(url, params=params, headers=self._headers())
-        resp.raise_for_status()
-        return resp.json()
+        """레이트리밋 + 429/5xx/네트워크 오류 시 지수 백오프 재시도 (NFR-3)."""
+        last_exc: Exception | None = None
+        for attempt in range(len(BACKOFF_DELAYS) + 1):
+            if attempt > 0:
+                await asyncio.sleep(BACKOFF_DELAYS[attempt - 1])
+            await self.limiter.wait()
+            try:
+                resp = await self._client.get(url, params=params, headers=self._headers())
+                resp.raise_for_status()
+                return resp.json()
+            except Exception as exc:
+                if not _is_retryable(exc):
+                    raise
+                last_exc = exc
+        raise last_exc
 
     async def search(self, query: str, region: str | None = None) -> list[RawListing]:
         data = await self._get_json(

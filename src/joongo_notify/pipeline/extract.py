@@ -119,7 +119,9 @@ class OllamaExtractor:
                     return findings, self.name
             except (httpx.HTTPError, json.JSONDecodeError, KeyError, TypeError):
                 continue
-        return self.fallback.extract(category, text), f"{self.fallback.name}(llm-fallback)"
+        # FR-C2 AC: 재시도 후에도 실패하면 리포트에 분석실패를 마킹하고 휴리스틱으로 폴백.
+        # extractor 필드의 "llm-failed" 마커로 LLM 실패율을 사후 집계할 수 있다.
+        return self.fallback.extract(category, text), f"llm-failed→{self.fallback.name}"
 
     async def _chat(self, prompt: str) -> str:
         async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:

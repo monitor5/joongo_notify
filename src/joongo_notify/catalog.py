@@ -14,8 +14,11 @@ from .models import AttributeValue, Category, ConditionAttribute, Product
 
 _NORMALIZE_RE = re.compile(r"[\s\-_/.,()\[\]+~!·]+")
 
-# 판매글이 아닌 것(구매 희망/매입 업자 글) — 전 제품 공통 제외 (실매물 스모크에서 발견된 오탐)
-GLOBAL_EXCLUDE_KEYWORDS = ["삽니다", "구합니다", "구매합니다", "매입", "삽니당", "구해요", "구매원해요"]
+# 판매글이 아닌 것(구매 희망/매입 업자 글) — 전 제품 공통 제외 (실매물 스모크에서 발견된 오탐).
+# products.yaml의 global_exclude_keywords로 재정의 가능 (데이터 파일 수정만으로 튜닝).
+DEFAULT_GLOBAL_EXCLUDE_KEYWORDS = [
+    "삽니다", "구합니다", "구매합니다", "매입", "삽니당", "구해요", "구매원해요"
+]
 
 
 def normalize(text: str) -> str:
@@ -23,12 +26,23 @@ def normalize(text: str) -> str:
 
 
 class Catalog:
-    def __init__(self, categories: list[Category], products: list[Product]):
+    def __init__(
+        self,
+        categories: list[Category],
+        products: list[Product],
+        global_excludes: list[str] | None = None,
+    ):
         self.categories = {c.id: c for c in categories}
         self.products = {p.id: p for p in products}
-        # 제품별 정규화 별칭 (정식명 포함)
+        if global_excludes is None:
+            global_excludes = DEFAULT_GLOBAL_EXCLUDE_KEYWORDS
+        # 제품별 정규화 별칭/제외어는 여기서 1회 사전 계산 (matches()가 핫패스)
         self._alias_index: dict[str, list[str]] = {
             p.id: [normalize(a) for a in [p.name, *p.aliases] if a.strip()]
+            for p in products
+        }
+        self._exclude_index: dict[str, list[str]] = {
+            p.id: [normalize(kw) for kw in [*p.exclude_keywords, *global_excludes] if kw]
             for p in products
         }
 
@@ -49,8 +63,7 @@ class Catalog:
         norm_title = normalize(title)
         if not any(alias in norm_title for alias in self._alias_index[product_id]):
             return False
-        excludes = [*product.exclude_keywords, *GLOBAL_EXCLUDE_KEYWORDS]
-        return not any(normalize(kw) in norm_title for kw in excludes if kw)
+        return not any(kw in norm_title for kw in self._exclude_index[product_id])
 
 
 def _parse_attribute(raw: dict) -> ConditionAttribute:
@@ -97,4 +110,6 @@ def load_catalog(data_dir: str | Path) -> Catalog:
     unknown = [p.id for p in products if p.category_id not in category_ids]
     if unknown:
         raise ValueError(f"products.yaml: 존재하지 않는 카테고리를 참조: {unknown}")
-    return Catalog(categories, products)
+    return Catalog(
+        categories, products, global_excludes=prod_raw.get("global_exclude_keywords")
+    )

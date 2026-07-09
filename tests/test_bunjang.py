@@ -63,3 +63,11 @@ def test_parse_detail_defensive_on_empty():
     raw = RawListing(platform="bunjang", platform_id="1", title="t", url="u")
     merged = parse_detail(raw, {})
     assert merged.description == ""
+
+
+def test_parse_detail_image_count_zero_creates_no_images():
+    """imageCount=0이면 존재하지 않는 이미지 URL을 만들지 않는다."""
+    raw = RawListing(platform="bunjang", platform_id="1", title="t", url="u")
+    data = {"data": {"product": {"description": "d", "imageUrl": "https://x/{cnt}_{res}.jpg", "imageCount": 0}}}
+    merged = parse_detail(raw, data)
+    assert merged.images == []
