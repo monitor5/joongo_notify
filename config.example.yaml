@@ -17,12 +17,19 @@ llm:
   model: ""               # 발주자 벤치마크 후 선정 (Q3). 예: "qwythos:9b"
   timeout_seconds: 120
 
+vl:                       # ③단계 사진 검증 (FR-C3) — Watch 조건의 시각검증가능 속성만
+  enabled: false
+  base_url: http://127.0.0.1:11434
+  model: ""               # 예: "qwen2.5vl:3b" (Q4 벤치마크 후 선정)
+  max_images: 3
+
 telegram:
   enabled: false
   token: ""               # BotFather 발급 토큰 (환경변수 권장)
   chat_id: ""             # 웹 설정 화면에서도 등록 가능
 
 collect:
+  platforms: [bunjang, daangn, joongna]  # 당근은 Watch 지역이 "동이름-지역ID" 형식일 때만 수집
   default_interval_minutes: 30   # 저빈도 확정 전제 (10번 문서 §8)
   min_interval_minutes: 15
   request_delay_min_seconds: 2

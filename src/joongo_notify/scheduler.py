@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
-from .adapters import BunjangAdapter
+from .adapters import BunjangAdapter, DaangnAdapter, JoongnaAdapter
 from .adapters.base import CollectorAdapter
 from .catalog import Catalog
 from .config import Config
@@ -20,9 +20,22 @@ logger = logging.getLogger("joongo_notify")
 TICK_SECONDS = 60
 
 
+ADAPTER_REGISTRY = {
+    "bunjang": BunjangAdapter,
+    "daangn": DaangnAdapter,
+    "joongna": JoongnaAdapter,
+}
+
+
 def build_adapters(config: Config) -> list[CollectorAdapter]:
-    # Phase 2에서 당근마켓·중고나라 어댑터 추가 (FR-C0: 여기만 늘리면 됨)
-    return [BunjangAdapter(config.collect)]
+    adapters: list[CollectorAdapter] = []
+    for name in config.collect.platforms:
+        cls = ADAPTER_REGISTRY.get(name)
+        if cls is None:
+            logger.warning("알 수 없는 플랫폼 설정 무시: %s", name)
+            continue
+        adapters.append(cls(config.collect))
+    return adapters
 
 
 def build_notifier(config: Config, db: Database) -> Notifier:

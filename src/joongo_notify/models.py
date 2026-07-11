@@ -94,6 +94,7 @@ class Listing:
     posted_at: str | None
     collected_at: str = field(default_factory=utcnow_iso)
     detail_fetched: bool = False  # 본문·이미지 확보 여부 — 확보 전에는 분석하지 않음
+    dup_of: int | None = None  # 교차 플랫폼 중복 그룹의 원본 listing id (FR-C4)
     raw: dict = field(default_factory=dict)
 
 
@@ -106,6 +107,7 @@ class AttributeFinding:
     evidence: str = ""
     confidence: str = "med"  # low | med | high
     source: str = "text"  # text | image
+    conflict: bool = False  # 본문 주장과 사진 판정이 상충 (FR-C3 AC)
 
 
 @dataclass
@@ -129,6 +131,8 @@ class ConditionVerdict:
     value: str
     evidence: str
     delta: int  # 점수 반영량
+    source: str = "text"  # text | image — 근거 출처 (FR-C3 신뢰도 표기)
+    conflict: bool = False  # 본문-사진 상충
 
 
 @dataclass

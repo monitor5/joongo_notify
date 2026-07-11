@@ -23,8 +23,12 @@ def format_match_message(watch: Watch, listing: Listing, match: MatchResult) -> 
         icon = OUTCOME_ICONS.get(v.outcome, "•")
         req = "[필수]" if v.required else "[선호]"
         line = f"{icon} {req} {v.attribute_name}: {v.value}"
+        if getattr(v, "source", "text") == "image":
+            line += " 📷사진판정"
+        if getattr(v, "conflict", False):
+            line += " ⚠️본문-사진 상충"
         if v.evidence:
-            line += f' — "{v.evidence[:60]}"'
+            line += f' — "{v.evidence[:80]}"'
         lines.append(line)
     lines.append("")
     lines.append(listing.url)

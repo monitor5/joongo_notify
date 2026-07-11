@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS listings (
     posted_at TEXT,
     collected_at TEXT NOT NULL,
     detail_fetched INTEGER NOT NULL DEFAULT 0,
+    dup_of INTEGER,
     raw_json TEXT NOT NULL DEFAULT '{}',
     UNIQUE (platform, platform_id)
 );
@@ -220,8 +221,21 @@ class Database:
             posted_at=row["posted_at"],
             collected_at=row["collected_at"],
             detail_fetched=bool(row["detail_fetched"]),
+            dup_of=row["dup_of"],
             raw=json.loads(row["raw_json"]),
         )
+
+    def set_dup_of(self, listing_id: int, dup_of: int) -> None:
+        self.conn.execute("UPDATE listings SET dup_of=? WHERE id=?", (dup_of, listing_id))
+        self.conn.commit()
+
+    def match_notified(self, watch_id: int, listing_id: int) -> bool:
+        row = self.conn.execute(
+            "SELECT 1 FROM match_results WHERE watch_id=? AND listing_id=? "
+            "AND notified_at IS NOT NULL",
+            (watch_id, listing_id),
+        ).fetchone()
+        return row is not None
 
     # ---- analysis ------------------------------------------------------
     def save_report(self, report: AnalysisReport) -> None:

@@ -28,6 +28,16 @@ class LLMConfig(BaseModel):
     timeout_seconds: float = 120.0
 
 
+class VLConfig(BaseModel):
+    """③단계 VL 사진 검증 (FR-C3). 모델은 발주자 벤치마크 후 선정 (Q4)."""
+
+    enabled: bool = False
+    base_url: str = "http://127.0.0.1:11434"  # Ollama (LLM과 공유 가능)
+    model: str = ""  # 예: "qwen2.5vl:3b"
+    max_images: int = 3
+    timeout_seconds: float = 180.0
+
+
 class TelegramConfig(BaseModel):
     enabled: bool = False
     token: str = ""
@@ -36,6 +46,7 @@ class TelegramConfig(BaseModel):
 
 class CollectConfig(BaseModel):
     # NFR-3 / 10번 문서 §8: 저빈도 확정 전제
+    platforms: list[str] = ["bunjang", "daangn", "joongna"]
     default_interval_minutes: int = 30
     min_interval_minutes: int = 15
     request_delay_min_seconds: float = 2.0
@@ -66,6 +77,7 @@ class Config(BaseModel):
     data_dir: str = "data"
     auth: AuthConfig = Field(default_factory=AuthConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
+    vl: VLConfig = Field(default_factory=VLConfig)
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     collect: CollectConfig = Field(default_factory=CollectConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
@@ -80,6 +92,8 @@ _ENV_OVERRIDES = {
     "JOONGO_SESSION_SECRET": ("auth", "session_secret"),
     "JOONGO_LLM_BASE_URL": ("llm", "base_url"),
     "JOONGO_LLM_MODEL": ("llm", "model"),
+    "JOONGO_VL_BASE_URL": ("vl", "base_url"),
+    "JOONGO_VL_MODEL": ("vl", "model"),
     "JOONGO_TELEGRAM_TOKEN": ("telegram", "token"),
     "JOONGO_TELEGRAM_CHAT_ID": ("telegram", "chat_id"),
 }

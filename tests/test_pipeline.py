@@ -20,8 +20,8 @@ class FakeAdapter:
             raise RuntimeError("boom")
         return [
             RawListing(
-                platform="fake", platform_id=i["id"], title=i["title"],
-                url=f"https://fake/{i['id']}", price=i.get("price"),
+                platform=self.platform, platform_id=i["id"], title=i["title"],
+                url=f"https://{self.platform}/{i['id']}", price=i.get("price"),
                 region=i.get("region"), description="",
             )
             for i in self.items
@@ -89,6 +89,20 @@ async def test_end_to_end_match_and_notify(db, config):
     assert stats.notified == 1
     assert "아이폰 14 프로 256" in notifier.sent[0]
     assert "✅" in notifier.sent[0] and "번인" in notifier.sent[0]
+
+
+@pytest.mark.asyncio
+async def test_region_text_filter_in_runner(db, config):
+    """지역 필터는 러너가 수행 — 지역 불일치 탈락, 지역 미상 통과 (FR-A5)."""
+    seoul = {**GOOD, "id": "300", "region": "서울특별시 강남구"}
+    busan = {**GOOD, "id": "301", "region": "부산광역시 해운대구"}
+    unknown = {**GOOD, "id": "302"}  # 지역 정보 없음 → 통과 (미탐 회피)
+    stats, notifier, _ = await _run(
+        make_watch(region="서울"), [seoul, busan, unknown], db, config
+    )
+    assert stats.new_listings == 2
+    assert stats.notified == 2
+    assert not any("301" in m for m in notifier.sent)
 
 
 @pytest.mark.asyncio

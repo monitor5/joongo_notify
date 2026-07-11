@@ -6,13 +6,9 @@
 """
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 
-import httpx
-
-from ..config import CollectConfig
-from .base import RateLimiter, RawListing
+from .base import HttpAdapter, RawListing
 
 SEARCH_URL = "https://api.bunjang.co.kr/api/1/find_v2.json"
 DETAIL_URL = "https://api.bunjang.co.kr/api/pms/v3/products-detail/{pid}"
@@ -83,55 +79,17 @@ def parse_detail(raw: RawListing, data: dict) -> RawListing:
     return raw
 
 
-BACKOFF_DELAYS = [2.0, 4.0, 8.0, 16.0]  # NFR-3 지수 백오프 (10번 문서 §8)
-
-
-def _is_retryable(exc: Exception) -> bool:
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        return status == 429 or status >= 500
-    return isinstance(exc, httpx.TransportError)
-
-
-class BunjangAdapter:
+class BunjangAdapter(HttpAdapter):
     platform = "bunjang"
 
-    def __init__(self, config: CollectConfig, client: httpx.AsyncClient | None = None):
-        self.config = config
-        self.limiter = RateLimiter(config)
-        # 프로세스 수명 동안 연결 풀 재사용 (요청마다 TLS 핸드셰이크 방지)
-        self._client = client or httpx.AsyncClient(timeout=30.0)
-
-    def _headers(self) -> dict:
-        return {"User-Agent": self.config.user_agent}
-
-    async def _get_json(self, url: str, params: dict | None = None) -> dict:
-        """레이트리밋 + 429/5xx/네트워크 오류 시 지수 백오프 재시도 (NFR-3)."""
-        last_exc: Exception | None = None
-        for attempt in range(len(BACKOFF_DELAYS) + 1):
-            if attempt > 0:
-                await asyncio.sleep(BACKOFF_DELAYS[attempt - 1])
-            await self.limiter.wait()
-            try:
-                resp = await self._client.get(url, params=params, headers=self._headers())
-                resp.raise_for_status()
-                return resp.json()
-            except Exception as exc:
-                if not _is_retryable(exc):
-                    raise
-                last_exc = exc
-        raise last_exc
-
     async def search(self, query: str, region: str | None = None) -> list[RawListing]:
+        # 지역 필터는 러너가 수행 (어댑터 응답 0건 = 플랫폼 이상 신호를 유지하기 위해
+        # 필터 전 원본 건수를 그대로 반환한다)
         data = await self._get_json(
             SEARCH_URL, params={"q": query, "order": "date", "n": 50, "page": 0}
         )
         items = data.get("list") or []
-        results = [r for r in (parse_search_item(i) for i in items) if r]
-        # 번개장터는 지역 파라미터가 없어 location 텍스트로 후처리 필터 (FR-A5)
-        if region:
-            results = [r for r in results if r.region and region in r.region]
-        return results
+        return [r for r in (parse_search_item(i) for i in items) if r]
 
     async def detail(self, raw: RawListing) -> RawListing:
         data = await self._get_json(

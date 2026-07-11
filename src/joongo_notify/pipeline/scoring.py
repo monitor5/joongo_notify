@@ -72,13 +72,19 @@ def score_listing(
         value = finding.value if finding else UNMENTIONED
         evidence = finding.evidence if finding else ""
         confidence = finding.confidence if finding else "low"
-        factor = config.low_confidence_factor if confidence == "low" else 1.0
+        source = finding.source if finding else "text"
+        conflict = finding.conflict if finding else False
+        # 신뢰도 low 또는 본문-사진 상충 시 조정치 가중 축소 (FR-C5)
+        factor = config.low_confidence_factor if (confidence == "low" or conflict) else 1.0
 
         outcome = _judge(condition.accepted_values, value)
         delta = 0.0
         if condition.required:
-            if outcome == VIOLATED:
+            if outcome == VIOLATED and not conflict:
                 hard_violation = True
+            elif outcome == VIOLATED and conflict:
+                # 상충 상태의 위반은 확정 탈락 대신 감점 (사람이 최종 판단 — 계획서 §6)
+                delta = -config.soft_violated_penalty
             elif outcome == UNMENTIONED_OUTCOME:
                 delta = -config.required_unmentioned_penalty
         else:
@@ -99,6 +105,8 @@ def score_listing(
                 value=value,
                 evidence=evidence,
                 delta=round(delta),
+                source=source,
+                conflict=conflict,
             )
         )
 

@@ -13,14 +13,16 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from ..adapters.base import CollectorAdapter, RawListing
+from ..adapters.base import CollectorAdapter, RawListing, region_name_of
 from ..catalog import Catalog
 from ..config import Config
 from ..db import Database
 from ..models import AnalysisReport, Listing, MatchResult, Watch
 from ..notify.base import Notifier
+from .dedup import find_duplicate
 from .extract import run_extractor
 from .scoring import score_listing
+from .vision import OllamaVision, vl_already_ran
 
 logger = logging.getLogger("joongo_notify")
 
@@ -88,6 +90,12 @@ async def _send_match(
     notifier: Notifier, stats: CycleStats,
 ) -> None:
     """발송 성공 시에만 notified_at 마킹 — 실패하면 다음 사이클에 재시도된다."""
+    # FR-C4: 중복 그룹의 원본이 이미 이 Watch로 알림됐으면 재알림하지 않음
+    if listing.dup_of and db.match_notified(watch.id, listing.dup_of):
+        db.mark_notified(watch.id, listing.id)  # 재시도 대상에서 제외
+        logger.info("listing %s: 원본 %s가 이미 알림됨 — 중복 알림 생략",
+                    listing.id, listing.dup_of)
+        return
     try:
         await notifier.send_match(watch, listing, match)
         db.mark_notified(watch.id, listing.id)
@@ -112,17 +120,24 @@ async def _process_listing(
     catalog: Catalog, db: Database, config: Config, notifier: Notifier,
     stats: CycleStats, budget: DetailBudget,
 ) -> None:
-    # ① 별칭 필터 + 가격 필터 (목록 단계)
+    # ① 별칭 필터 + 지역/가격 필터 (목록 단계)
     if not catalog.matches(watch.product_id, raw.title):
         return
     stats.alias_matched += 1
+    # 지역 텍스트 필터 (FR-A5) — 매물에 지역 정보가 없으면 통과 (미탐 회피)
+    if watch.region and raw.region and region_name_of(watch.region) not in raw.region:
+        return
     if not price_in_range(watch, raw.price):
         return
 
     listing_id, is_new = db.upsert_listing(normalize_raw(raw))
+    listing = db.get_listing(listing_id)
     if is_new:
         stats.new_listings += 1
-    listing = db.get_listing(listing_id)
+        duplicate_of = find_duplicate(db, listing)  # FR-C4 교차 플랫폼 중복
+        if duplicate_of:
+            db.set_dup_of(listing_id, duplicate_of)
+            listing.dup_of = duplicate_of
 
     # 상세 미확보 매물은 (신규 여부와 무관하게) 상세 시도 — 실패 시 다음 사이클 재시도
     if not listing.detail_fetched:
@@ -154,7 +169,19 @@ async def _process_listing(
         db.save_report(report)
         stats.analyzed += 1
 
-    # ③(VL)은 Phase 2 — 스코어링으로 직행
+    # ③ VL 사진 검증 (FR-C3) — Watch 조건의 시각검증가능 속성만, 리포트당 1회
+    if (
+        config.vl.enabled and config.vl.model and listing.images
+        and not vl_already_ran(report)
+    ):
+        condition_attr_ids = [c.attribute_id for c in watch.conditions]
+        merged = await OllamaVision(config.vl).verify(
+            category, listing, report, condition_attr_ids
+        )
+        if merged is not None:
+            report = merged
+            db.save_report(report)
+
     score, passed, verdicts = score_listing(watch, report, category, config.scoring)
     match = MatchResult(
         watch_id=watch.id, listing_id=listing_id, score=score,
@@ -190,6 +217,10 @@ async def run_watch_cycle(
     budget = DetailBudget(config.collect.max_new_details_per_cycle)
 
     for adapter in adapters:
+        # 이 Watch 설정으로 수집 불가한 어댑터(예: 지역 슬러그 없는 당근)는 건너뜀 (실패 집계 아님)
+        can_collect = getattr(adapter, "can_collect", None)
+        if can_collect is not None and not can_collect(watch.region):
+            continue
         try:
             raws = await adapter.search(query, region=watch.region)
         except Exception as exc:  # 어댑터 장애 격리 (NFR-6)
