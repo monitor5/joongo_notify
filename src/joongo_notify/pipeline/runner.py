@@ -22,7 +22,7 @@ from ..notify.base import Notifier
 from .dedup import find_duplicate
 from .extract import run_extractor
 from .scoring import score_listing
-from .vision import OllamaVision, vl_already_ran
+from .vision import OllamaVision, attrs_needing_vl
 
 logger = logging.getLogger("joongo_notify")
 
@@ -33,6 +33,7 @@ class CycleStats:
     alias_matched: int = 0
     new_listings: int = 0
     analyzed: int = 0
+    vl_runs: int = 0
     judged: int = 0
     notified: int = 0
 
@@ -90,11 +91,11 @@ async def _send_match(
     notifier: Notifier, stats: CycleStats,
 ) -> None:
     """발송 성공 시에만 notified_at 마킹 — 실패하면 다음 사이클에 재시도된다."""
-    # FR-C4: 중복 그룹의 원본이 이미 이 Watch로 알림됐으면 재알림하지 않음
-    if listing.dup_of and db.match_notified(watch.id, listing.dup_of):
+    # FR-C4: 같은 중복 그룹의 매물이 이미 이 Watch로 알림됐으면 재알림하지 않음.
+    # (원본→중복, 중복→원본 양방향 — 원본이 늦게 분석 완료되는 순서에서도 억제)
+    if db.group_notified(watch.id, listing.id, listing.dup_of):
         db.mark_notified(watch.id, listing.id)  # 재시도 대상에서 제외
-        logger.info("listing %s: 원본 %s가 이미 알림됨 — 중복 알림 생략",
-                    listing.id, listing.dup_of)
+        logger.info("listing %s: 동일 매물 그룹이 이미 알림됨 — 중복 알림 생략", listing.id)
         return
     try:
         await notifier.send_match(watch, listing, match)
@@ -139,6 +140,10 @@ async def _process_listing(
             db.set_dup_of(listing_id, duplicate_of)
             listing.dup_of = duplicate_of
 
+    # 중복 그룹이 이미 이 Watch로 알림됐으면 상세 조회·분석 비용 자체를 생략 (FR-C4)
+    if db.group_notified(watch.id, listing_id, listing.dup_of):
+        return
+
     # 상세 미확보 매물은 (신규 여부와 무관하게) 상세 시도 — 실패 시 다음 사이클 재시도
     if not listing.detail_fetched:
         if not budget.take():
@@ -169,18 +174,18 @@ async def _process_listing(
         db.save_report(report)
         stats.analyzed += 1
 
-    # ③ VL 사진 검증 (FR-C3) — Watch 조건의 시각검증가능 속성만, 리포트당 1회
-    if (
-        config.vl.enabled and config.vl.model and listing.images
-        and not vl_already_ran(report)
-    ):
+    # ③ VL 사진 검증 (FR-C3) — Watch 조건의 시각검증가능 속성 중 미검증분만.
+    # 속성 단위 vl_checked 추적이라 조건이 다른 Watch도 각자 필요한 속성을 검증받는다.
+    if config.vl.enabled and config.vl.model and listing.images:
         condition_attr_ids = [c.attribute_id for c in watch.conditions]
-        merged = await OllamaVision(config.vl).verify(
-            category, listing, report, condition_attr_ids
-        )
-        if merged is not None:
-            report = merged
-            db.save_report(report)
+        if attrs_needing_vl(category, report, condition_attr_ids):
+            merged = await OllamaVision(config.vl).verify(
+                category, listing, report, condition_attr_ids
+            )
+            if merged is not None:
+                report = merged
+                db.save_report(report)  # extractor 불변 → 같은 행이 갱신됨
+                stats.vl_runs += 1
 
     score, passed, verdicts = score_listing(watch, report, category, config.scoring)
     match = MatchResult(
@@ -253,8 +258,8 @@ async def run_watch_cycle(
 
     db.touch_watch_run(watch.id)
     logger.info(
-        "watch %s '%s': 검색 %d → 별칭매칭 %d → 신규 %d → 분석 %d → 판정 %d → 알림 %d",
+        "watch %s '%s': 검색 %d → 별칭매칭 %d → 신규 %d → 분석 %d → VL %d → 판정 %d → 알림 %d",
         watch.id, watch.name, stats.searched, stats.alias_matched,
-        stats.new_listings, stats.analyzed, stats.judged, stats.notified,
+        stats.new_listings, stats.analyzed, stats.vl_runs, stats.judged, stats.notified,
     )
     return stats

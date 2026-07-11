@@ -15,14 +15,13 @@ import re
 from datetime import datetime, timezone, timedelta
 from urllib.parse import quote
 
-from .base import HttpAdapter, RawListing
+from .base import HttpAdapter, RawListing, iter_ldjson
 
 logger = logging.getLogger("joongo_notify")
 
 SEARCH_URL = "https://web.joongna.com/search/{query}"
 PRODUCT_URL = "https://web.joongna.com/product/{seq}"
 FLIGHT_RE = re.compile(r'self\.__next_f\.push\(\[1,\s*"((?:[^"\\]|\\.)*)"\]\)', re.S)
-LDJSON_RE = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
 KST = timezone(timedelta(hours=9))
 
 
@@ -78,12 +77,8 @@ def parse_search_items(html: str) -> list[RawListing]:
 
 
 def parse_detail(raw: RawListing, html: str) -> RawListing:
-    for m in LDJSON_RE.finditer(html):
-        try:
-            data = json.loads(m.group(1))
-        except json.JSONDecodeError:
-            continue
-        if data.get("@type") != "Product":
+    for data in iter_ldjson(html):
+        if not isinstance(data, dict) or data.get("@type") != "Product":
             continue
         raw.description = str(data.get("description") or "")
         images = data.get("image")

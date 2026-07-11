@@ -10,8 +10,8 @@
 from __future__ import annotations
 
 import logging
-import re
 
+from ..catalog import SEPARATOR_RE
 from ..db import Database
 from ..models import Listing
 
@@ -20,11 +20,10 @@ logger = logging.getLogger("joongo_notify")
 TITLE_SIMILARITY_THRESHOLD = 0.6
 RECENT_DAYS = 14
 
-_TOKEN_RE = re.compile(r"[\s\-_/.,()\[\]+~!·]+")
-
 
 def title_tokens(title: str) -> set[str]:
-    return {t.lower() for t in _TOKEN_RE.split(title) if len(t) >= 2}
+    # 별칭 매칭과 동일한 구분자 정의 사용 (catalog와 어긋나지 않게)
+    return {t.lower() for t in SEPARATOR_RE.split(title) if len(t) >= 2}
 
 
 def title_similarity(a: str, b: str) -> float:
@@ -41,10 +40,12 @@ def find_duplicate(db: Database, listing: Listing) -> int | None:
     """
     if listing.price is None:
         return None  # 가격 없이 제목만으로 묶는 건 오탐 위험이 큼
+    # collected_at은 ISO-8601('T' 구분자)이므로 비교 기준도 같은 포맷으로 생성
+    # (기본 datetime()은 공백 구분자라 문자열 비교가 경계일에서 어긋난다)
     rows = db.conn.execute(
         """SELECT id, title FROM listings
            WHERE price = ? AND platform != ? AND id != ?
-             AND collected_at >= datetime('now', ?)
+             AND collected_at >= strftime('%Y-%m-%dT%H:%M:%S', 'now', ?)
            ORDER BY id ASC""",
         (listing.price, listing.platform, listing.id or 0, f"-{RECENT_DAYS} days"),
     ).fetchall()

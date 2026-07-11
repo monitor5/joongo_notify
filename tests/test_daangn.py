@@ -39,9 +39,10 @@ def test_parse_feed_items():
     assert r.platform == "daangn"
     assert r.platform_id == "아이폰-14-프로-iq5zki4ettt2"
     assert r.price == 900000
-    assert r.region == "역삼동-6035"
+    assert r.region == "역삼동"  # 알림 표기용 — 슬러그가 아닌 동네 이름
     assert "번인 없고" in r.description  # 피드에 본문 포함 → 상세 불필요
     assert r.images
+    assert r.description  # detail_fetched=True로 정규화됨 (normalize_raw)
 
 
 def test_slug_id():

@@ -83,8 +83,9 @@ def score_listing(
             if outcome == VIOLATED and not conflict:
                 hard_violation = True
             elif outcome == VIOLATED and conflict:
-                # 상충 상태의 위반은 확정 탈락 대신 감점 (사람이 최종 판단 — 계획서 §6)
-                delta = -config.soft_violated_penalty
+                # 상충 상태의 위반은 확정 탈락 대신 감점 (사람이 최종 판단 — 계획서 §6).
+                # 상충은 factor가 이미 축소되어 있으므로 동일하게 가중 적용.
+                delta = -config.soft_violated_penalty * factor
             elif outcome == UNMENTIONED_OUTCOME:
                 delta = -config.required_unmentioned_penalty
         else:

@@ -51,6 +51,40 @@ def test_no_duplicate_without_price(db):
 
 
 @pytest.mark.asyncio
+async def test_duplicate_suppressed_when_original_processed_later(db, config):
+    """원본이 늦게 분석 완료되는 순서에서도 이중 알림이 없다 (양방향 억제).
+
+    시나리오: 원본 A(bunjang)는 상세 실패로 분석이 밀리고, 중복 B(joongna)가
+    먼저 알림됨. 이후 A가 분석 완료돼도 A.dup_of는 None이지만 그룹 알림 이력으로 억제.
+    """
+    from joongo_notify.catalog import load_catalog
+    from joongo_notify.notify.base import ConsoleNotifier
+    from joongo_notify.pipeline.runner import run_watch_cycle
+    from tests.test_pipeline import FakeAdapter, FlakyDetailAdapter, make_watch
+
+    catalog = load_catalog(config.data_dir)
+    watch = make_watch()
+    watch.id = db.insert_watch(watch)
+    notifier = ConsoleNotifier()
+
+    item_a = {"id": "A1", "title": "아이폰 14 프로 256 팝니다", "price": 900000,
+              "description": "번인 없습니다. 풀박스 구성입니다."}
+    item_b = {**item_a, "id": "B1", "title": "아이폰 14 프로 팝니다 256"}
+
+    slow = FlakyDetailAdapter([item_a], detail_fail_times=1)  # 원본: 상세 지연
+    fast = FakeAdapter([item_b])
+    fast.platform = "fake2"
+
+    # 사이클 1: A는 분석 보류, B는 dup_of=A로 연결된 뒤 알림됨
+    await run_watch_cycle(watch, [slow, fast], catalog, db, config, notifier)
+    assert len(notifier.sent) == 1
+
+    # 사이클 2: A 상세 성공 — 하지만 그룹이 이미 알림됨 → 억제
+    await run_watch_cycle(watch, [slow, fast], catalog, db, config, notifier)
+    assert len(notifier.sent) == 1
+
+
+@pytest.mark.asyncio
 async def test_duplicate_notification_suppressed(db, config):
     """중복 매물은 같은 Watch로 두 번 알림되지 않는다 (FR-C4 AC)."""
     from joongo_notify.catalog import load_catalog

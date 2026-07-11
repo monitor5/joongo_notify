@@ -12,7 +12,9 @@ import yaml
 
 from .models import AttributeValue, Category, ConditionAttribute, Product
 
-_NORMALIZE_RE = re.compile(r"[\s\-_/.,()\[\]+~!·]+")
+# 제목 정규화용 구분자 집합 — 별칭 매칭과 중복 제거(dedup)가 공유
+SEPARATOR_RE = re.compile(r"[\s\-_/.,()\[\]+~!·]+")
+_NORMALIZE_RE = SEPARATOR_RE
 
 # 판매글이 아닌 것(구매 희망/매입 업자 글) — 전 제품 공통 제외 (실매물 스모크에서 발견된 오탐).
 # products.yaml의 global_exclude_keywords로 재정의 가능 (데이터 파일 수정만으로 튜닝).

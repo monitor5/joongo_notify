@@ -108,6 +108,7 @@ class AttributeFinding:
     confidence: str = "med"  # low | med | high
     source: str = "text"  # text | image
     conflict: bool = False  # 본문 주장과 사진 판정이 상충 (FR-C3 AC)
+    vl_checked: bool = False  # 이 속성에 대해 VL 사진 검증을 시도했는가 (속성 단위 추적)
 
 
 @dataclass

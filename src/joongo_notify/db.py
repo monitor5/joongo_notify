@@ -78,6 +78,8 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_listings_price_collected
+    ON listings (price, collected_at);
 """
 
 
@@ -234,6 +236,26 @@ class Database:
             "SELECT 1 FROM match_results WHERE watch_id=? AND listing_id=? "
             "AND notified_at IS NOT NULL",
             (watch_id, listing_id),
+        ).fetchone()
+        return row is not None
+
+    def group_notified(
+        self, watch_id: int, listing_id: int, dup_of: int | None
+    ) -> bool:
+        """같은 중복 그룹(원본·형제·자기 자신 제외)의 매물이 이 Watch로 알림됐는가 (FR-C4).
+
+        dup_of는 항상 더 오래된 매물을 가리키므로 그룹 = {원본} ∪ {원본을 가리키는 것들}.
+        원본이 늦게 처리되는 순서(상세 지연 등)에서도 양방향으로 억제된다.
+        """
+        root = dup_of or listing_id
+        row = self.conn.execute(
+            """SELECT 1 FROM match_results m
+               JOIN listings l ON l.id = m.listing_id
+               WHERE m.watch_id = ? AND m.notified_at IS NOT NULL
+                 AND m.listing_id != ?
+                 AND (l.id = ? OR l.dup_of = ?)
+               LIMIT 1""",
+            (watch_id, listing_id, root, root),
         ).fetchone()
         return row is not None
 

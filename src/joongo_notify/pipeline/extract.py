@@ -18,6 +18,7 @@ import httpx
 
 from ..config import LLMConfig
 from ..models import UNMENTIONED, AttributeFinding, Category, ConditionAttribute
+from .ollama import chat_json
 
 _SENTENCE_SPLIT = re.compile(r"[\n.!?。]+")
 
@@ -124,19 +125,9 @@ class OllamaExtractor:
         return self.fallback.extract(category, text), f"llm-failed→{self.fallback.name}"
 
     async def _chat(self, prompt: str) -> str:
-        async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
-            resp = await client.post(
-                f"{self.config.base_url.rstrip('/')}/api/chat",
-                json={
-                    "model": self.config.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "format": "json",
-                    "stream": False,
-                    "options": {"temperature": 0},
-                },
-            )
-            resp.raise_for_status()
-            return resp.json()["message"]["content"]
+        return await chat_json(
+            self.config.base_url, self.config.model, prompt, self.config.timeout_seconds
+        )
 
     @staticmethod
     def _validate(category: Category, content: str) -> list[AttributeFinding] | None:

@@ -52,15 +52,35 @@ class RateLimiter:
 
 class CollectorAdapter(Protocol):
     platform: str
-    requires_region: bool  # True면 Watch에 지역 설정이 있어야 수집 가능 (당근)
+
+    def can_collect(self, region: str | None) -> bool:
+        """이 Watch 지역 설정으로 수집 가능한가. False면 러너가 조용히 건너뛴다
+        (실패 집계 아님). 예: 당근은 지역 슬러그 없이는 수집 불가."""
+        ...
 
     async def search(self, query: str, region: str | None = None) -> list[RawListing]:
-        """검색어(+지역)로 최신 매물 목록을 반환한다. 본문은 비어 있을 수 있다."""
+        """검색어(+지역)로 최신 매물 목록을 반환한다. 본문은 비어 있을 수 있다.
+        지역/가격 필터링은 러너가 수행하므로 원본 결과를 그대로 반환할 것
+        (응답 0건 = 플랫폼 이상 신호를 보존하기 위해)."""
         ...
 
     async def detail(self, raw: RawListing) -> RawListing:
         """목록 항목에 본문·이미지 등 상세를 채워 반환한다."""
         ...
+
+
+def iter_ldjson(html: str):
+    """페이지에 임베드된 schema.org ld+json 블록들을 파싱해 순회 (당근·중고나라 공용)."""
+    import json
+    import re
+
+    for m in re.finditer(
+        r'<script type="application/ld\+json">(.*?)</script>', html, re.S
+    ):
+        try:
+            yield json.loads(m.group(1))
+        except json.JSONDecodeError:
+            continue
 
 
 def region_name_of(region: str) -> str:
@@ -95,11 +115,9 @@ class HttpAdapter:
     """레이트리밋 + 지수 백오프 + 연결 풀 재사용을 제공하는 어댑터 공통 기반."""
 
     platform = "base"
-    requires_region = False
 
     def can_collect(self, region: str | None) -> bool:
-        """이 Watch 설정으로 수집 가능한가. False면 러너가 조용히 건너뛴다 (실패 집계 아님)."""
-        return not self.requires_region or bool(region)
+        return True  # 기본: 지역 설정과 무관하게 수집 가능
 
     def __init__(self, config: CollectConfig, client=None):
         import httpx
