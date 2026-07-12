@@ -121,6 +121,31 @@ def test_send_limits(db, config):
 
 
 @pytest.mark.asyncio
+async def test_dry_run_moves_to_terminal_state(db, config, monkeypatch):
+    """dry-run 발송은 queued로 되돌아가지 않고 터미널 상태로 → 무한 재처리 방지."""
+    from joongo_notify.autochat import sender as sender_mod
+
+    cfg = AutoChatConfig(enabled=True, dry_run=True)
+    watch_id = db.insert_watch(make_watch())
+    lid = _add_listing(db, "dry")
+    db.enqueue_chat(ChatMessage(None, watch_id, lid, "fake", "u", "m", status="queued"))
+
+    # send()를 성공으로 스텁 (실제 브라우저 미기동)
+    async def fake_send(self, chat):
+        return None
+    monkeypatch.setattr(ChatSender, "send", fake_send)
+
+    from joongo_notify.autochat.sender import process_chat_queue
+    await process_chat_queue(db, cfg)
+    assert db.chats_by_status("queued") == []  # 더 이상 재처리 대상 아님
+    assert len(db.chats_by_status("dry_run_ok")) == 1
+
+    # 두 번째 실행에서 재처리되지 않음
+    await process_chat_queue(db, cfg)
+    assert len(db.chats_by_status("dry_run_ok")) == 1
+
+
+@pytest.mark.asyncio
 async def test_send_rejects_undefined_selectors():
     """셀렉터가 없는 플랫폼은 발송 거부 (오발송 방지)."""
     sender = ChatSender(AutoChatConfig(), selectors={})

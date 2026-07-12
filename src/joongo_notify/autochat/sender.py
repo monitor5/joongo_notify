@@ -40,6 +40,11 @@ def load_selectors(path: Path | str = SELECTORS_FILE) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
+def profile_dir(config: AutoChatConfig, platform: str) -> Path:
+    """플랫폼 로그인 세션(브라우저 프로필) 경로 — sender와 chat-login CLI가 공유."""
+    return Path(config.profile_dir) / platform
+
+
 def within_send_limits(db: Database, config: AutoChatConfig) -> bool:
     now = datetime.now(timezone.utc)
     hour_ago = (now - timedelta(hours=1)).isoformat(timespec="seconds")
@@ -56,9 +61,6 @@ class ChatSender:
         self.config = config
         self.selectors = selectors if selectors is not None else load_selectors()
 
-    def _profile_dir(self, platform: str) -> Path:
-        return Path(self.config.profile_dir) / platform
-
     async def send(self, chat: ChatMessage) -> None:
         """문의 1건 발송. 실패 시 예외 — 호출자가 상태 기록.
 
@@ -70,7 +72,7 @@ class ChatSender:
 
         from playwright.async_api import async_playwright
 
-        profile = self._profile_dir(chat.platform)
+        profile = profile_dir(self.config, chat.platform)
         profile.mkdir(parents=True, exist_ok=True)
         async with async_playwright() as pw:
             context = await pw.chromium.launch_persistent_context(
@@ -113,10 +115,11 @@ async def process_chat_queue(db: Database, config: AutoChatConfig) -> int:
             break
         try:
             await sender.send(chat)
-            # dry_run이면 실제로 보내지 않았으므로 상한 소진 방지 위해 별도 상태
             if config.dry_run:
-                db.set_chat_status(chat.id, "queued", error="dry-run: 미발송")
-                logger.info("[dry-run] chat %s 발송 시뮬레이션 완료", chat.id)
+                # 터미널 상태로 이동 — queued로 되돌리면 매 tick 재처리되어
+                # 브라우저를 무한 재기동한다 (계정 리스크·자원 낭비). 상한도 소진 안 함.
+                db.set_chat_status(chat.id, "dry_run_ok", error="dry-run: 미발송(검증 완료)")
+                logger.info("[dry-run] chat %s 발송 시뮬레이션 완료 (터미널)", chat.id)
             else:
                 db.set_chat_status(chat.id, "sent", sent=True)
                 sent += 1

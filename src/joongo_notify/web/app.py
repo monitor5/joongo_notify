@@ -6,7 +6,8 @@ import logging
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
-from urllib.parse import quote
+from statistics import median
+from urllib.parse import quote, urlparse
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -15,7 +16,7 @@ from fastapi.templating import Jinja2Templates
 from ..catalog import Catalog, load_catalog
 from ..config import Config, load_config
 from ..db import Database
-from ..models import Watch, WatchCondition
+from ..models import Watch, WatchCondition, utcnow_iso
 from ..scheduler import build_notifier, scheduler_loop
 from .auth import LoginGuard, SessionManager, verify_password
 
@@ -48,8 +49,7 @@ def build_price_chart(series: list[dict]) -> dict | None:
     # 일자별 중앙값 추세선
     median_pts = []
     for d in days:
-        vals = sorted(p for dd, p in points if dd == d)
-        med = vals[len(vals) // 2] if len(vals) % 2 else (vals[len(vals)//2-1]+vals[len(vals)//2])//2
+        med = median(p for dd, p in points if dd == d)
         median_pts.append((round(day_x[d], 1), round(y_of(med), 1)))
     trend = " ".join(f"{x},{y}" for x, y in median_pts)
     return {
@@ -69,6 +69,19 @@ class NotAuthenticated(Exception):
 
 def _client_key(request: Request) -> str:
     return request.client.host if request.client else "unknown"
+
+
+def _safe_referer(request: Request, fallback: str = "/") -> str:
+    """referer가 같은 호스트의 상대 경로일 때만 사용 (open-redirect 방지)."""
+    referer = request.headers.get("referer")
+    if not referer:
+        return fallback
+    parsed = urlparse(referer)
+    if parsed.scheme or parsed.netloc:  # 절대 URL이면 호스트 일치 확인
+        if parsed.netloc != request.url.netloc:
+            return fallback
+    path = parsed.path or fallback
+    return path + (f"?{parsed.query}" if parsed.query else "")
 
 
 def create_app(
@@ -203,13 +216,20 @@ def create_app(
             )
 
         def _int_or_default(key: str, default: int | None) -> int | None:
-            """0을 유효값으로 보존 (`or default`의 falsy-zero 함정 회피)."""
+            """비음수 정수만 허용, 0은 유효값으로 보존 (falsy-zero 함정 회피).
+
+            가격·임계·주기·문의가격 모두 음수가 무의미하다. 음수/비정수는 default로.
+            (isdigit()은 부호·소수점·다중대시를 모두 거부하므로 int() 예외 없음)
+            """
             value = str(form.get(key, "")).strip()
-            return int(value) if value.lstrip("-").isdigit() else default
+            return int(value) if value.isdigit() else default
 
         interval = _int_or_default("interval_minutes", config.collect.default_interval_minutes)
         interval = max(interval, config.collect.min_interval_minutes)  # FR-C1 AC
-        threshold = _int_or_default("threshold", config.scoring.default_threshold)
+        threshold = min(100, _int_or_default("threshold", config.scoring.default_threshold))
+        chat_threshold = _int_or_default("auto_chat_threshold", None)
+        if chat_threshold is not None:
+            chat_threshold = min(100, chat_threshold)
 
         chat_mode = str(form.get("auto_chat_mode", "off"))
         if chat_mode not in ("off", "approve", "auto"):
@@ -227,9 +247,9 @@ def create_app(
             conditions=conditions,
             status=existing.status if existing else "active",
             last_run_at=existing.last_run_at if existing else None,
-            created_at=existing.created_at if existing else Watch.__dataclass_fields__["created_at"].default_factory(),
+            created_at=existing.created_at if existing else utcnow_iso(),
             auto_chat_mode=chat_mode,
-            auto_chat_threshold=_int_or_default("auto_chat_threshold", None),
+            auto_chat_threshold=chat_threshold,
             auto_chat_price=_int_or_default("auto_chat_price", None),
         )
 
@@ -336,8 +356,7 @@ def create_app(
                              feedback: str = Form(...)):
         if feedback in ("good", "bad", "ignore"):
             db.set_match_feedback(match_id, feedback)
-        referer = request.headers.get("referer", "/")
-        return RedirectResponse(referer, status_code=303)
+        return RedirectResponse(_safe_referer(request), status_code=303)
 
     # ---- 시세 그래프 -----------------------------------------------------
     @app.get("/prices", response_class=HTMLResponse)

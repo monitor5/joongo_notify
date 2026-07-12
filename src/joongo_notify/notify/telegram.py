@@ -16,9 +16,10 @@ API = "https://api.telegram.org/bot{token}/{method}"
 
 
 class TelegramNotifier:
-    def __init__(self, config: TelegramConfig, db: Database):
+    def __init__(self, config: TelegramConfig, db: Database, web_base: str = ""):
         self.config = config
         self.db = db
+        self.web_base = web_base
 
     def _chat_id(self) -> str:
         return self.db.get_setting("telegram_chat_id", self.config.chat_id)
@@ -40,7 +41,7 @@ class TelegramNotifier:
         )
 
     async def send_match(self, watch: Watch, listing: Listing, match: MatchResult) -> None:
-        message = format_match_message(watch, listing, match)
+        message = format_match_message(watch, listing, match, self.web_base)
         chat_id = self._chat_id()
         if listing.images:
             try:

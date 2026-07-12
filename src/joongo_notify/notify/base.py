@@ -8,8 +8,14 @@ from ..models import Listing, MatchResult, Watch
 OUTCOME_ICONS = {"satisfied": "✅", "violated": "❌", "unmentioned": "❓"}
 
 
-def format_match_message(watch: Watch, listing: Listing, match: MatchResult) -> str:
-    """알림 본문: 점수 + 속성별 판정 요약과 근거 (FR-D1 AC)."""
+def format_match_message(
+    watch: Watch, listing: Listing, match: MatchResult, web_base: str = ""
+) -> str:
+    """알림 본문: 점수 + 속성별 판정 요약과 근거 (FR-D1 AC).
+
+    web_base가 설정되면 승인·피드백을 할 수 있는 웹 대시보드 링크를 덧붙인다
+    (FR-D6 사전 승인·FR-D2 피드백은 웹 UI에서 수행).
+    """
     lines = [
         f"🔔 [{watch.name}] 조건 부합 매물 — {match.score}점",
         f"{listing.title}",
@@ -32,6 +38,11 @@ def format_match_message(watch: Watch, listing: Listing, match: MatchResult) -> 
         lines.append(line)
     lines.append("")
     lines.append(listing.url)
+    if web_base:
+        base = web_base.rstrip("/")
+        if watch.auto_chat_mode == "approve":
+            lines.append(f"💬 문의 승인: {base}/chats")
+        lines.append(f"🔧 관리·피드백: {base}/")
     return "\n".join(lines)
 
 
@@ -46,11 +57,12 @@ class Notifier(Protocol):
 class ConsoleNotifier:
     """텔레그램 미설정 시 / 스모크 테스트용."""
 
-    def __init__(self) -> None:
+    def __init__(self, web_base: str = "") -> None:
         self.sent: list[str] = []
+        self.web_base = web_base
 
     async def send_match(self, watch: Watch, listing: Listing, match: MatchResult) -> None:
-        message = format_match_message(watch, listing, match)
+        message = format_match_message(watch, listing, match, self.web_base)
         self.sent.append(message)
         print("\n" + "=" * 60 + "\n" + message + "\n" + "=" * 60)
 

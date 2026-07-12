@@ -89,7 +89,6 @@ def _chat_login(config, platform: str) -> int:
     사람이 직접 로그인하는 방식이라 계정 자격증명을 코드가 다루지 않는다.
     """
     import asyncio
-    from pathlib import Path
 
     async def run() -> None:
         try:
@@ -98,7 +97,9 @@ def _chat_login(config, platform: str) -> int:
             print("playwright 미설치 — `pip install playwright && playwright install chromium`",
                   file=sys.stderr)
             raise SystemExit(1)
-        profile = Path(config.autochat.profile_dir) / platform
+        from .autochat.sender import profile_dir
+
+        profile = profile_dir(config.autochat, platform)
         profile.mkdir(parents=True, exist_ok=True)
         print(f"[{platform}] 브라우저가 열립니다. 본인 계정으로 로그인한 뒤 이 창에서 Enter를 누르세요.")
         async with async_playwright() as pw:

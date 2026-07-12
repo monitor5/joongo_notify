@@ -111,6 +111,38 @@ async def test_chat_approve_flow(client, db):
     assert db.get_chat(cid2).status == "cancelled"
 
 
+async def test_negative_values_rejected(client, db):
+    """음수 threshold/price는 서버에서 거부되고 기본값으로 폴백 (raw POST 방어)."""
+    wid = _watch(db, threshold=60)
+    await client.post(f"/watches/{wid}/edit", data={
+        "product_id": "iphone-14-pro", "name": "x", "threshold": "-50",
+        "price_min": "--5", "auto_chat_price": "-1000", "cond_burn_in": ["없음"]})
+    w = db.get_watch(wid)
+    assert w.threshold == 60  # -50 거부 → 기본값
+    assert w.price_min is None  # '--5' 거부
+    assert w.auto_chat_price is None  # 음수 거부 (판매자에 음수가 발송되지 않음)
+
+
+async def test_threshold_clamped_to_100(client, db):
+    wid = _watch(db)
+    await client.post(f"/watches/{wid}/edit", data={
+        "product_id": "iphone-14-pro", "name": "x", "threshold": "9999", "cond_burn_in": ["없음"]})
+    assert db.get_watch(wid).threshold == 100
+
+
+async def test_feedback_open_redirect_blocked(client, db):
+    """referer가 외부 절대 URL이면 무시하고 안전한 경로로 리다이렉트."""
+    wid = _watch(db)
+    lid = _listing(db)
+    db.save_match(MatchResult(watch_id=wid, listing_id=lid, score=85, passed=True, verdicts=[]))
+    mid = db.recent_matches()[0]["id"]
+    resp = await client.post(f"/matches/{mid}/feedback", data={"feedback": "good"},
+                             headers={"referer": "https://evil.example.com/phish"},
+                             follow_redirects=False)
+    assert resp.status_code == 303
+    assert "evil.example.com" not in resp.headers["location"]
+
+
 def test_build_price_chart():
     assert build_price_chart([]) is None
     assert build_price_chart([{"day": "2026-07-01", "price": 800000}]) is None

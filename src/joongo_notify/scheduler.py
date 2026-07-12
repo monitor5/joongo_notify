@@ -39,9 +39,10 @@ def build_adapters(config: Config) -> list[CollectorAdapter]:
 
 
 def build_notifier(config: Config, db: Database) -> Notifier:
+    web_base = config.web.base_url or ""
     if config.telegram.enabled and config.telegram.token:
-        return TelegramNotifier(config.telegram, db)
-    return ConsoleNotifier()
+        return TelegramNotifier(config.telegram, db, web_base=web_base)
+    return ConsoleNotifier(web_base=web_base)
 
 
 def is_due(watch: Watch, now: datetime, min_interval: int) -> bool:
