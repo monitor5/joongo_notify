@@ -66,6 +66,11 @@ async def scheduler_loop(config: Config, db: Database, catalog: Catalog) -> None
             for watch in db.list_watches(status="active"):
                 if is_due(watch, now, config.collect.min_interval_minutes):
                     await run_watch_cycle(watch, adapters, catalog, db, config, notifier)
+            # 자동 채팅 큐 처리 (FR-D6) — auto 모드로 큐잉된 문의를 상한 내 발송
+            if config.autochat.enabled:
+                from .autochat.sender import process_chat_queue
+
+                await process_chat_queue(db, config.autochat)
         except asyncio.CancelledError:
             raise
         except Exception:

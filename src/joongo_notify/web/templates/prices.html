@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>시세 그래프</h3>
+<form method="get" action="/prices">
+  <label>제품
+    <select name="product" onchange="this.form.submit()">
+      {% for p in products %}
+      <option value="{{ p.id }}" {{ "selected" if product_id == p.id else "" }}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+
+{% if not chart %}
+<p style="margin-top:16px">데이터가 부족합니다 (매칭 판정된 매물 2건 이상 필요). 수집이 쌓이면 표시됩니다.</p>
+{% else %}
+<p style="font-size:13px">점 = 개별 매물 가격 · 선 = 일자별 중앙값 추세 · 데이터 {{ point_count }}건</p>
+<svg viewBox="0 0 {{ chart.width }} {{ chart.height }}" style="max-width:100%;height:auto;border:1px solid #8884;border-radius:6px" role="img" aria-label="가격 추이">
+  <!-- y축 최소/최대 가이드 -->
+  <line x1="{{ chart.pad }}" y1="{{ chart.y_hi }}" x2="{{ chart.width - chart.pad }}" y2="{{ chart.y_hi }}" stroke="#8883" stroke-dasharray="3"/>
+  <line x1="{{ chart.pad }}" y1="{{ chart.y_lo }}" x2="{{ chart.width - chart.pad }}" y2="{{ chart.y_lo }}" stroke="#8883" stroke-dasharray="3"/>
+  <text x="{{ chart.pad }}" y="{{ chart.y_hi - 4 }}" font-size="11" fill="#888">{{ "{:,}".format(chart.hi) }}원</text>
+  <text x="{{ chart.pad }}" y="{{ chart.y_lo + 14 }}" font-size="11" fill="#888">{{ "{:,}".format(chart.lo) }}원</text>
+  <!-- 추세선 -->
+  <polyline points="{{ chart.trend }}" fill="none" stroke="#4c8bf5" stroke-width="2"/>
+  <!-- 산점 -->
+  {% for d in chart.dots %}
+  <circle cx="{{ d.x }}" cy="{{ d.y }}" r="3.5" fill="#4c8bf5" fill-opacity="0.45">
+    <title>{{ d.day }}: {{ "{:,}".format(d.price) }}원</title>
+  </circle>
+  {% endfor %}
+</svg>
+{% endif %}
+{% endblock %}

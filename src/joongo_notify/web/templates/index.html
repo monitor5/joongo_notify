@@ -16,6 +16,7 @@
   <td><span class="badge {{ w.status }}">{{ "감시중" if w.status == "active" else "일시정지" }}</span></td>
   <td>{{ w.last_run_at or "-" }}</td>
   <td>
+    <a href="/watches/{{ w.id }}/edit">수정</a>
     {% if w.status == "active" %}
     <form class="inline" method="post" action="/watches/{{ w.id }}/pause"><button>정지</button></form>
     {% else %}
@@ -34,20 +35,21 @@
 {% if not matches %}<p>아직 매칭된 매물이 없습니다.</p>{% endif %}
 {% if matches %}
 <table>
-<tr><th>점수</th><th>Watch</th><th>매물</th><th>가격</th><th>지역</th><th>판정</th><th>알림</th></tr>
+<tr><th>점수</th><th>Watch</th><th>매물</th><th>가격</th><th>지역</th><th>판정</th><th>알림</th><th>피드백</th></tr>
 {% for m in matches %}
 <tr>
-  <td class="score">{{ m.score }}</td>
+  <td class="score"><a href="/matches/{{ m.id }}">{{ m.score }}</a></td>
   <td>{{ m.watch_name }}</td>
   <td><a href="{{ m.url }}" target="_blank" rel="noopener">{{ m.title[:40] }}</a></td>
   <td>{{ "{:,}".format(m.price) if m.price is not none else "?" }}원</td>
   <td>{{ m.region or "-" }}</td>
   <td>
     {% for v in m.verdicts %}
-      {% if v.outcome == "satisfied" %}✅{% elif v.outcome == "violated" %}❌{% else %}❓{% endif %}{{ v.attribute_name }}
+      {% if v.outcome == "satisfied" %}✅{% elif v.outcome == "violated" %}❌{% else %}❓{% endif %}{{ v.attribute_name }}{% if v.conflict %}⚠️{% endif %}
     {% endfor %}
   </td>
   <td>{{ "✔" if m.notified_at else "-" }}</td>
+  <td>{% if m.feedback %}{{ {"good":"👍","bad":"👎","ignore":"🔕"}[m.feedback] }}{% else %}-{% endif %}</td>
 </tr>
 {% endfor %}
 </table>

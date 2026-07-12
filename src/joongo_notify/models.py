@@ -76,6 +76,27 @@ class Watch:
     status: str = "active"  # active | paused
     last_run_at: str | None = None
     created_at: str = field(default_factory=utcnow_iso)
+    # 자동 채팅 (FR-D6): off = 안 함 | approve = 사전 승인(웹에서 발송 확정) | auto = 완전 자동
+    auto_chat_mode: str = "off"
+    auto_chat_threshold: int | None = None  # 자동문의 발동 점수 (알림 임계보다 높게)
+    auto_chat_price: int | None = None  # 문의 메시지에 제시할 구매 의사 가격
+
+
+@dataclass
+class ChatMessage:
+    """자동 채팅 문의 1건 (FR-D6). 발송 전문과 시각을 기록한다."""
+
+    id: int | None
+    watch_id: int
+    listing_id: int
+    platform: str
+    listing_url: str
+    message: str
+    # pending(승인 대기) | queued(발송 대기) | sent | failed | cancelled
+    status: str = "pending"
+    error: str = ""
+    created_at: str = field(default_factory=utcnow_iso)
+    sent_at: str | None = None
 
 
 @dataclass

@@ -8,6 +8,7 @@ from pathlib import Path
 from .models import (
     AnalysisReport,
     AttributeFinding,
+    ChatMessage,
     ConditionVerdict,
     Listing,
     MatchResult,
@@ -78,9 +79,34 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    watch_id INTEGER NOT NULL REFERENCES watches(id),
+    listing_id INTEGER NOT NULL REFERENCES listings(id),
+    platform TEXT NOT NULL,
+    listing_url TEXT NOT NULL,
+    message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    error TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL,
+    sent_at TEXT,
+    UNIQUE (watch_id, listing_id)
+);
 CREATE INDEX IF NOT EXISTS idx_listings_price_collected
     ON listings (price, collected_at);
 """
+
+# 구버전 DB에 추가된 컬럼 (컬럼명 → ALTER 구문). __init__에서 자동 적용
+_MIGRATIONS: dict[str, list[tuple[str, str]]] = {
+    "watches": [
+        ("auto_chat_mode", "ALTER TABLE watches ADD COLUMN auto_chat_mode TEXT NOT NULL DEFAULT 'off'"),
+        ("auto_chat_threshold", "ALTER TABLE watches ADD COLUMN auto_chat_threshold INTEGER"),
+        ("auto_chat_price", "ALTER TABLE watches ADD COLUMN auto_chat_price INTEGER"),
+    ],
+    "match_results": [
+        ("feedback", "ALTER TABLE match_results ADD COLUMN feedback TEXT"),
+    ],
+}
 
 
 class Database:
@@ -91,7 +117,17 @@ class Database:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA foreign_keys=ON")
         self.conn.executescript(SCHEMA)
+        self._migrate()
         self.conn.commit()
+
+    def _migrate(self) -> None:
+        for table, columns in _MIGRATIONS.items():
+            existing = {
+                r["name"] for r in self.conn.execute(f"PRAGMA table_info({table})")
+            }
+            for column, ddl in columns:
+                if column not in existing:
+                    self.conn.execute(ddl)
 
     def close(self) -> None:
         self.conn.close()
@@ -100,8 +136,9 @@ class Database:
     def insert_watch(self, watch: Watch) -> int:
         cur = self.conn.execute(
             """INSERT INTO watches (product_id, name, price_min, price_max, region,
-                   interval_minutes, threshold, conditions_json, status, last_run_at, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                   interval_minutes, threshold, conditions_json, status, last_run_at,
+                   created_at, auto_chat_mode, auto_chat_threshold, auto_chat_price)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 watch.product_id,
                 watch.name,
@@ -114,10 +151,37 @@ class Database:
                 watch.status,
                 watch.last_run_at,
                 watch.created_at,
+                watch.auto_chat_mode,
+                watch.auto_chat_threshold,
+                watch.auto_chat_price,
             ),
         )
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def update_watch(self, watch: Watch) -> None:
+        """Watch 수정 (FR-A3). id 기준 전체 필드 갱신."""
+        self.conn.execute(
+            """UPDATE watches SET product_id=?, name=?, price_min=?, price_max=?,
+                   region=?, interval_minutes=?, threshold=?, conditions_json=?,
+                   auto_chat_mode=?, auto_chat_threshold=?, auto_chat_price=?
+               WHERE id=?""",
+            (
+                watch.product_id,
+                watch.name,
+                watch.price_min,
+                watch.price_max,
+                watch.region,
+                watch.interval_minutes,
+                watch.threshold,
+                json.dumps([c.__dict__ for c in watch.conditions], ensure_ascii=False),
+                watch.auto_chat_mode,
+                watch.auto_chat_threshold,
+                watch.auto_chat_price,
+                watch.id,
+            ),
+        )
+        self.conn.commit()
 
     @staticmethod
     def _row_to_watch(row: sqlite3.Row) -> Watch:
@@ -134,6 +198,9 @@ class Database:
             status=row["status"],
             last_run_at=row["last_run_at"],
             created_at=row["created_at"],
+            auto_chat_mode=row["auto_chat_mode"],
+            auto_chat_threshold=row["auto_chat_threshold"],
+            auto_chat_price=row["auto_chat_price"],
         )
 
     def get_watch(self, watch_id: int) -> Watch | None:
@@ -359,6 +426,130 @@ class Database:
             d["verdicts"] = [ConditionVerdict(**v) for v in json.loads(r["verdicts_json"])]
             result.append(d)
         return result
+
+    def set_match_feedback(self, match_id: int, feedback: str) -> None:
+        """알림 피드백 기록 (FR-D2): good | bad | ignore."""
+        self.conn.execute(
+            "UPDATE match_results SET feedback=? WHERE id=?", (feedback, match_id)
+        )
+        self.conn.commit()
+
+    def get_match(self, match_id: int) -> dict | None:
+        row = self.conn.execute(
+            """SELECT m.*, l.title, l.url, l.price, l.region, l.platform,
+                      l.description, l.images_json, w.name AS watch_name
+               FROM match_results m
+               JOIN listings l ON l.id = m.listing_id
+               JOIN watches w ON w.id = m.watch_id
+               WHERE m.id=?""",
+            (match_id,),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        d["verdicts"] = [ConditionVerdict(**v) for v in json.loads(row["verdicts_json"])]
+        d["images"] = json.loads(row["images_json"])
+        return d
+
+    def recent_listings(self, platform: str | None = None, limit: int = 100) -> list[dict]:
+        """매물 이력 (웹 UI)."""
+        if platform:
+            rows = self.conn.execute(
+                "SELECT * FROM listings WHERE platform=? ORDER BY id DESC LIMIT ?",
+                (platform, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM listings ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def price_series(self, product_id: str) -> list[dict]:
+        """제품별 시세 시계열 — 별칭 매칭된(=매칭 판정이 있는) 매물의 (일자, 가격).
+
+        판정 통과 여부와 무관하게 제품이 맞다고 판정된 매물 전체를 사용.
+        """
+        rows = self.conn.execute(
+            """SELECT DISTINCT l.id, substr(l.collected_at, 1, 10) AS day, l.price
+               FROM listings l
+               JOIN match_results m ON m.listing_id = l.id
+               JOIN watches w ON w.id = m.watch_id
+               WHERE w.product_id = ? AND l.price IS NOT NULL AND l.price > 0
+               ORDER BY l.collected_at""",
+            (product_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    # ---- chat queue (FR-D6) ---------------------------------------------
+    def enqueue_chat(self, chat: ChatMessage) -> int | None:
+        """문의 저장. 같은 (watch, listing) 조합이 이미 있으면 None (중복 문의 방지)."""
+        exists = self.conn.execute(
+            "SELECT 1 FROM chat_messages WHERE watch_id=? AND listing_id=?",
+            (chat.watch_id, chat.listing_id),
+        ).fetchone()
+        if exists:
+            return None
+        cur = self.conn.execute(
+            """INSERT INTO chat_messages
+                   (watch_id, listing_id, platform, listing_url, message, status,
+                    error, created_at, sent_at)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (
+                chat.watch_id, chat.listing_id, chat.platform, chat.listing_url,
+                chat.message, chat.status, chat.error, chat.created_at, chat.sent_at,
+            ),
+        )
+        self.conn.commit()
+        return int(cur.lastrowid)
+
+    @staticmethod
+    def _row_to_chat(row: sqlite3.Row) -> ChatMessage:
+        return ChatMessage(
+            id=row["id"], watch_id=row["watch_id"], listing_id=row["listing_id"],
+            platform=row["platform"], listing_url=row["listing_url"],
+            message=row["message"], status=row["status"], error=row["error"],
+            created_at=row["created_at"], sent_at=row["sent_at"],
+        )
+
+    def get_chat(self, chat_id: int) -> ChatMessage | None:
+        row = self.conn.execute(
+            "SELECT * FROM chat_messages WHERE id=?", (chat_id,)
+        ).fetchone()
+        return self._row_to_chat(row) if row else None
+
+    def chats_by_status(self, status: str, limit: int = 50) -> list[ChatMessage]:
+        rows = self.conn.execute(
+            "SELECT * FROM chat_messages WHERE status=? ORDER BY id LIMIT ?",
+            (status, limit),
+        ).fetchall()
+        return [self._row_to_chat(r) for r in rows]
+
+    def recent_chats(self, limit: int = 50) -> list[dict]:
+        rows = self.conn.execute(
+            """SELECT c.*, l.title, w.name AS watch_name
+               FROM chat_messages c
+               JOIN listings l ON l.id = c.listing_id
+               JOIN watches w ON w.id = c.watch_id
+               ORDER BY c.id DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_chat_status(
+        self, chat_id: int, status: str, error: str = "", sent: bool = False
+    ) -> None:
+        self.conn.execute(
+            "UPDATE chat_messages SET status=?, error=?, sent_at=? WHERE id=?",
+            (status, error, utcnow_iso() if sent else None, chat_id),
+        )
+        self.conn.commit()
+
+    def chats_sent_since(self, since_iso: str) -> int:
+        """발송 상한 집계 (FR-D6 AC). 실패·취소는 제외, 실제 발송분만."""
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM chat_messages WHERE status='sent' AND sent_at >= ?",
+            (since_iso,),
+        ).fetchone()[0]
 
     # ---- adapter health (FR-D4) ----------------------------------------
     def record_adapter_result(self, platform: str, ok: bool, error: str = "") -> int:

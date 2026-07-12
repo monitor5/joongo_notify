@@ -67,9 +67,27 @@ class ScoringConfig(BaseModel):
     default_threshold: int = 60
 
 
+class AutoChatConfig(BaseModel):
+    """자동 채팅 (FR-D6). 발주자 결정: 완전 자동(RPA) 허용, 계정 제재 리스크 인지·수용.
+
+    dry_run이 기본값 — 플랫폼별 셀렉터를 본인 로그인 세션으로 검증한 뒤
+    직접 false로 바꿔야 실발송된다 (미검증 셀렉터로 오발송 방지).
+    """
+
+    enabled: bool = False
+    dry_run: bool = True
+    hourly_limit: int = 2  # FR-D6 AC: 계정 보호 발송 상한
+    daily_limit: int = 5
+    headless: bool = True
+    profile_dir: str = "chat_profiles"  # 플랫폼별 로그인 세션(브라우저 프로필) 저장 위치
+    send_timeout_seconds: float = 60.0
+
+
 class WebConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 8320
+    # 알림 메시지에 들어갈 웹 UI 외부 주소 (승인 링크용). 미설정 시 host:port 사용
+    base_url: str = ""
 
 
 class Config(BaseModel):
@@ -81,6 +99,7 @@ class Config(BaseModel):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     collect: CollectConfig = Field(default_factory=CollectConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
+    autochat: AutoChatConfig = Field(default_factory=AutoChatConfig)
     web: WebConfig = Field(default_factory=WebConfig)
 
 

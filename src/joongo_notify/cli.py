@@ -25,6 +25,10 @@ def main(argv: list[str] | None = None) -> int:
     once.add_argument("--watch-id", type=int, default=None)
     sub.add_parser("hash-password", help="로그인 비밀번호 해시 생성 (FR-A1)")
     sub.add_parser("stats", help="수집/분석/알림 통계 출력 (FR-D5)")
+    login = sub.add_parser(
+        "chat-login", help="자동 채팅용 플랫폼 로그인 세션 저장 (FR-D6)"
+    )
+    login.add_argument("platform", choices=["bunjang", "daangn", "joongna"])
 
     args = parser.parse_args(argv)
 
@@ -57,6 +61,9 @@ def main(argv: list[str] | None = None) -> int:
         asyncio.run(run_once(config, db, catalog, watch_id=args.watch_id))
         return 0
 
+    if args.command == "chat-login":
+        return _chat_login(config, args.platform)
+
     if args.command == "stats":
         db = Database(config.db_path)
         for key, value in db.stats().items():
@@ -66,6 +73,44 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     return 1
+
+
+_LOGIN_URLS = {
+    "bunjang": "https://m.bunjang.co.kr/",
+    "daangn": "https://www.daangn.com/",
+    "joongna": "https://web.joongna.com/",
+}
+
+
+def _chat_login(config, platform: str) -> int:
+    """브라우저를 열어 본인 계정으로 로그인 → 세션(프로필)을 저장한다.
+
+    저장된 프로필은 ChatSender가 자동 채팅 발송 시 재사용한다. 헤드리스를 끄고
+    사람이 직접 로그인하는 방식이라 계정 자격증명을 코드가 다루지 않는다.
+    """
+    import asyncio
+    from pathlib import Path
+
+    async def run() -> None:
+        try:
+            from playwright.async_api import async_playwright
+        except ImportError:
+            print("playwright 미설치 — `pip install playwright && playwright install chromium`",
+                  file=sys.stderr)
+            raise SystemExit(1)
+        profile = Path(config.autochat.profile_dir) / platform
+        profile.mkdir(parents=True, exist_ok=True)
+        print(f"[{platform}] 브라우저가 열립니다. 본인 계정으로 로그인한 뒤 이 창에서 Enter를 누르세요.")
+        async with async_playwright() as pw:
+            context = await pw.chromium.launch_persistent_context(str(profile), headless=False)
+            page = await context.new_page()
+            await page.goto(_LOGIN_URLS[platform])
+            await asyncio.get_event_loop().run_in_executor(None, input, "로그인 완료 후 Enter> ")
+            await context.close()
+        print(f"세션 저장 완료: {profile}")
+
+    asyncio.run(run())
+    return 0
 
 
 if __name__ == "__main__":

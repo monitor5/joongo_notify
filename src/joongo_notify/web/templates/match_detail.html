@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block content %}
+<p><a href="/">← 대시보드</a></p>
+<h3>{{ m.title }} <span class="score">— {{ m.score }}점 {{ "(통과)" if m.passed else "(임계 미만)" }}</span></h3>
+<p>
+  <b>{{ "{:,}".format(m.price) if m.price is not none else "?" }}원</b>
+  · {{ m.platform }} · {{ m.region or "지역 미상" }}
+  · Watch: {{ m.watch_name }}
+  · <a href="{{ m.url }}" target="_blank" rel="noopener">원본 매물 열기 ↗</a>
+</p>
+
+{% if m.images %}
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
+  {% for img in m.images[:5] %}<img src="{{ img }}" alt="매물 사진" style="max-height:160px;border-radius:6px">{% endfor %}
+</div>
+{% endif %}
+
+<h4>속성별 판정</h4>
+<table>
+<tr><th>속성</th><th>구분</th><th>값</th><th>판정</th><th>점수</th><th>근거</th></tr>
+{% for v in m.verdicts %}
+<tr>
+  <td>{{ v.attribute_name }}</td>
+  <td>{{ "필수" if v.required else "선호" }}</td>
+  <td>{{ v.value }}{% if v.source == "image" %} 📷{% endif %}{% if v.conflict %} ⚠️상충{% endif %}</td>
+  <td>{% if v.outcome == "satisfied" %}✅ 충족{% elif v.outcome == "violated" %}❌ 위반{% else %}❓ 언급없음{% endif %}</td>
+  <td>{{ "%+d"|format(v.delta) if v.delta else "0" }}</td>
+  <td style="font-size:12px">{{ v.evidence[:120] }}</td>
+</tr>
+{% endfor %}
+</table>
+
+{% if m.description %}
+<h4>본문</h4>
+<pre style="white-space:pre-wrap;font-size:13px;background:#8881;padding:10px;border-radius:6px">{{ m.description[:1000] }}</pre>
+{% endif %}
+
+<h4>피드백 (FR-D2)</h4>
+<form class="inline" method="post" action="/matches/{{ m.id }}/feedback"><input type="hidden" name="feedback" value="good"><button>👍 맞음</button></form>
+<form class="inline" method="post" action="/matches/{{ m.id }}/feedback"><input type="hidden" name="feedback" value="bad"><button>👎 아님</button></form>
+<form class="inline" method="post" action="/matches/{{ m.id }}/feedback"><input type="hidden" name="feedback" value="ignore"><button>🔕 무시</button></form>
+{% if m.feedback %}<span class="msg">현재: {{ {"good":"👍 맞음","bad":"👎 아님","ignore":"🔕 무시"}[m.feedback] }}</span>{% endif %}
+{% endblock %}

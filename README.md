@@ -54,7 +54,20 @@ cp config.example.yaml config.yaml
 - **텔레그램 알림**: `telegram.enabled: true` + 토큰 설정 후, 웹 [설정]에서 chat_id 등록(테스트 발송 포함). 미설정 시 콘솔 출력.
 - **제품/조건 추가**: `data/products.yaml`(별칭 사전), `data/categories.yaml`(상태 속성) 수정만으로 가능 — 코드 변경 불필요.
 
+## 자동 채팅 (FR-D6, Phase 3)
+
+조건 부합 + 자동문의 임계 초과 매물에 판매자 문의를 발송합니다. Watch별로 `off`(안 함) / `approve`(웹 문의 화면에서 발송 승인) / `auto`(상한 내 자동 발송)를 고릅니다. 본인 계정 로그인이 필요하므로:
+
+```bash
+.venv/bin/pip install -e ".[autochat]" && playwright install chromium
+.venv/bin/joongo-notify chat-login bunjang   # 브라우저에서 직접 로그인 → 세션 저장
+# data/chat_selectors.yaml에 각 플랫폼 채팅 UI 셀렉터 기입 (로그인 상태에서 확인)
+# config.yaml: autochat.dry_run=true 로 입력창까지 검증 → 문제없으면 dry_run=false, enabled=true
+```
+
+발송 상한(기본 시간당 2건·일 5건)과 dry-run 기본값으로 계정 리스크를 통제합니다.
+
 ## 현재 상태
 
-**Phase 2 구현 완료** — 3개 플랫폼(번개장터·당근마켓·중고나라) 동시 감시, 교차 플랫폼 중복 제거, VL 사진 검증(상충 표기). 실매물 대상 3플랫폼 엔드투엔드 검증 완료 (2026-07-11).
-Phase 3 예정: 자동 채팅(FR-D6, RPA), 웹 UI 고도화, 카카오 OAuth, 카테고리 확장, 피드백 루프.
+**Phase 3 진행 중** — 자동 채팅 RPA(FR-D6), 웹 UI 고도화(Watch 수정·매물 이력·매칭 상세·시세 그래프·문의 큐·피드백) 완료. 3플랫폼 수집·분석·알림 전체 스택 동작 검증 완료.
+남은 항목: 카카오 OAuth(보류), 카테고리 확장.

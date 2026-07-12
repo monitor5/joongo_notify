@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>매물 이력</h3>
+<p>
+  <a href="/listings">전체</a>
+  {% for p in platforms %} · <a href="/listings?platform={{ p }}" {{ 'style="font-weight:bold"' if platform == p else '' }}>{{ p }}</a>{% endfor %}
+</p>
+{% if not listings %}<p>수집된 매물이 없습니다.</p>{% endif %}
+{% if listings %}
+<table>
+<tr><th>플랫폼</th><th>제목</th><th>가격</th><th>지역</th><th>수집시각</th><th>상세</th></tr>
+{% for l in listings %}
+<tr>
+  <td>{{ l.platform }}</td>
+  <td><a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.title[:45] }}</a></td>
+  <td>{{ "{:,}".format(l.price) if l.price is not none else "?" }}원</td>
+  <td>{{ l.region or "-" }}</td>
+  <td style="font-size:12px">{{ l.collected_at[:16].replace("T", " ") }}</td>
+  <td>{{ "✔" if l.detail_fetched else "-" }}{% if l.dup_of %} 🔗중복{% endif %}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

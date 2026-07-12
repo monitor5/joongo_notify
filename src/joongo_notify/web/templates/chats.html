@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h3>자동 채팅 문의 (FR-D6)</h3>
+{% if not autochat_enabled %}
+<p class="error">자동 채팅이 서버에서 비활성입니다 (<code>autochat.enabled: false</code>). 아래 승인은 큐에만 반영되고 실제 발송되지 않습니다.</p>
+{% elif dry_run %}
+<p class="error">dry-run 모드입니다 — 승인된 문의는 입력창까지만 채우고 실제 전송하지 않습니다 (셀렉터 검증용). 실발송하려면 <code>autochat.dry_run: false</code>로 전환하세요.</p>
+{% endif %}
+<p style="font-size:13px">상태: pending(승인 대기) → queued(발송 대기) → sent / failed / cancelled</p>
+
+{% if not chats %}<p>문의 내역이 없습니다. Watch에 자동 채팅 모드를 켜면 조건 부합 매물에 대해 생성됩니다.</p>{% endif %}
+{% if chats %}
+<table>
+<tr><th>상태</th><th>Watch</th><th>매물</th><th>플랫폼</th><th>메시지</th><th>동작</th></tr>
+{% for c in chats %}
+<tr>
+  <td><span class="badge">{{ c.status }}</span>{% if c.error %}<br><span class="error" style="font-size:11px">{{ c.error[:40] }}</span>{% endif %}</td>
+  <td>{{ c.watch_name }}</td>
+  <td><a href="{{ c.listing_url }}" target="_blank" rel="noopener">{{ c.title[:30] }}</a></td>
+  <td>{{ c.platform }}</td>
+  <td style="font-size:12px;max-width:260px">{{ c.message[:120] }}</td>
+  <td>
+    {% if c.status == "pending" %}
+    <form class="inline" method="post" action="/chats/{{ c.id }}/approve"><button>발송 승인</button></form>
+    {% endif %}
+    {% if c.status in ["pending", "queued", "failed"] %}
+    <form class="inline" method="post" action="/chats/{{ c.id }}/cancel"><button>취소</button></form>
+    {% endif %}
+  </td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}
+{% endblock %}

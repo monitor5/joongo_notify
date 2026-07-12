@@ -17,7 +17,8 @@ from ..adapters.base import CollectorAdapter, RawListing, region_name_of
 from ..catalog import Catalog
 from ..config import Config
 from ..db import Database
-from ..models import AnalysisReport, Listing, MatchResult, Watch
+from ..autochat.template import build_chat_message
+from ..models import AnalysisReport, ChatMessage, Listing, MatchResult, Watch
 from ..notify.base import Notifier
 from .dedup import find_duplicate
 from .extract import run_extractor
@@ -197,7 +198,40 @@ async def _process_listing(
     stats.judged += 1
 
     if passed:
+        _maybe_enqueue_chat(watch, listing, match, category, catalog, db)
         await _send_match(watch, listing, match, db, notifier, stats)
+
+
+def _maybe_enqueue_chat(
+    watch: Watch, listing: Listing, match: MatchResult, category, catalog: Catalog,
+    db: Database,
+) -> None:
+    """자동 채팅 조건 충족 시 문의를 큐에 넣는다 (FR-D6).
+
+    - mode=off: 안 함
+    - mode=approve: pending(웹에서 사람이 발송 확정)
+    - mode=auto: queued(발송기가 상한 내 자동 발송)
+    자동문의 임계는 알림 임계보다 높게 (설정 없으면 알림 임계+20, 100 상한).
+    """
+    if watch.auto_chat_mode == "off":
+        return
+    chat_threshold = watch.auto_chat_threshold
+    if chat_threshold is None:
+        chat_threshold = min(100, watch.threshold + 20)
+    if match.score < chat_threshold:
+        return
+    # 필수 조건 위반이 없어야 함 (passed=True가 이미 보장하지만 명시)
+    product = catalog.products.get(watch.product_id)
+    product_name = product.name if product else watch.product_id
+    message = build_chat_message(watch, match, product_name)
+    status = "queued" if watch.auto_chat_mode == "auto" else "pending"
+    db.enqueue_chat(
+        ChatMessage(
+            id=None, watch_id=watch.id, listing_id=listing.id, platform=listing.platform,
+            listing_url=listing.url, message=message, status=status,
+        )
+    )
+    logger.info("자동 채팅 큐잉 (watch=%s listing=%s status=%s)", watch.id, listing.id, status)
 
 
 async def run_watch_cycle(

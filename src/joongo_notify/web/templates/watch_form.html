@@ -1,18 +1,21 @@
 {% extends "base.html" %}
+{% set editing = watch is defined and watch %}
+{% set sel = selected_conditions if selected_conditions is defined else {} %}
 {% block content %}
-<h3>Watch 등록</h3>
-<form method="post" action="/watches">
+<h3>{{ "Watch 수정" if editing else "Watch 등록" }}</h3>
+<form method="post" action="{{ '/watches/%d/edit'|format(watch.id) if editing else '/watches' }}">
   <fieldset>
     <legend>① 제품</legend>
     <label>제품 선택
       <select name="product_id" id="product_id" required onchange="showAttrs()">
         <option value="">-- 선택 --</option>
         {% for p in products %}
-        <option value="{{ p.id }}" data-category="{{ p.category_id }}">{{ p.name }} ({{ categories[p.category_id].name }})</option>
+        <option value="{{ p.id }}" data-category="{{ p.category_id }}"
+          {{ "selected" if editing and watch.product_id == p.id else "" }}>{{ p.name }} ({{ categories[p.category_id].name }})</option>
         {% endfor %}
       </select>
     </label>
-    <label>Watch 이름 (선택) <input type="text" name="name" placeholder="예: 아이폰14프로 번인없는거"></label>
+    <label>Watch 이름 (선택) <input type="text" name="name" value="{{ watch.name if editing else '' }}" placeholder="예: 아이폰14프로 번인없는거"></label>
   </fieldset>
 
   <fieldset>
@@ -21,14 +24,17 @@
       {% if cat.attributes %}
       <div class="attrs" id="attrs-{{ cat_id }}" style="display:none">
         {% for attr in cat.attributes %}
+        {% set c = sel.get(attr.id) %}
         <div style="margin:8px 0">
           <strong>{{ attr.name }}</strong>
-          <label style="margin-left:8px"><input type="checkbox" name="req_{{ attr.id }}"> 필수 조건</label><br>
+          <label style="margin-left:8px"><input type="checkbox" name="req_{{ attr.id }}" {{ "checked" if c and c.required else "" }}> 필수 조건</label><br>
           {% if attr.type == "number" %}
-            최소값: <input type="number" name="cond_{{ attr.id }}_min" min="0" max="100" style="width:70px"> % 이상
+            최소값: <input type="number" name="cond_{{ attr.id }}_min" min="0" max="100" style="width:70px"
+              value="{{ (c.accepted_values[0][2:] if c and c.accepted_values and c.accepted_values[0].startswith('>=') else '') }}"> % 이상
           {% else %}
             {% for av in attr.values %}
-            <label style="margin-right:10px"><input type="checkbox" name="cond_{{ attr.id }}" value="{{ av.value }}"> {{ av.value }}</label>
+            <label style="margin-right:10px"><input type="checkbox" name="cond_{{ attr.id }}" value="{{ av.value }}"
+              {{ "checked" if c and av.value in c.accepted_values else "" }}> {{ av.value }}</label>
             {% endfor %}
           {% endif %}
         </div>
@@ -40,15 +46,31 @@
 
   <fieldset>
     <legend>③ 가격 · ④ 지역 · 운영</legend>
-    <label>최소가 <input type="number" name="price_min" min="0" step="1000"> 원</label>
-    <label>최대가 <input type="number" name="price_max" min="0" step="1000"> 원</label><br>
-    <label>지역 필터 (선택) <input type="text" name="region" placeholder="예: 역삼동-6035 또는 서울"></label>
+    <label>최소가 <input type="number" name="price_min" min="0" step="1000" value="{{ watch.price_min if editing and watch.price_min is not none else '' }}"> 원</label>
+    <label>최대가 <input type="number" name="price_max" min="0" step="1000" value="{{ watch.price_max if editing and watch.price_max is not none else '' }}"> 원</label><br>
+    <label>지역 필터 (선택) <input type="text" name="region" value="{{ watch.region if editing and watch.region else '' }}" placeholder="예: 역삼동-6035 또는 서울"></label>
     <p style="font-size:12px;margin:4px 0">당근마켓 수집은 <b>"동이름-지역ID"</b> 형식(당근 웹 주소의 <code>?in=</code> 값)이 필요합니다. 일반 텍스트(예: "서울")면 당근은 건너뛰고 번개장터·중고나라의 지역 텍스트 필터로만 동작합니다.</p><br>
-    <label>수집 주기 <input type="number" name="interval_minutes" value="{{ default_interval }}" min="{{ min_interval }}"> 분 (최소 {{ min_interval }}분)</label>
-    <label>알림 임계 점수 <input type="number" name="threshold" value="{{ default_threshold }}" min="0" max="100"></label>
+    <label>수집 주기 <input type="number" name="interval_minutes" value="{{ watch.interval_minutes if editing else default_interval }}" min="{{ min_interval }}"> 분 (최소 {{ min_interval }}분)</label>
+    <label>알림 임계 점수 <input type="number" name="threshold" value="{{ watch.threshold if editing else default_threshold }}" min="0" max="100"></label>
   </fieldset>
 
-  <button>⑤ 등록</button>
+  <fieldset>
+    <legend>⑤ 자동 채팅 (선택) — 조건 부합 매물에 판매자 문의 자동 발송</legend>
+    <label>모드
+      <select name="auto_chat_mode">
+        <option value="off" {{ "selected" if not editing or watch.auto_chat_mode == "off" else "" }}>안 함</option>
+        <option value="approve" {{ "selected" if editing and watch.auto_chat_mode == "approve" else "" }}>사전 승인 (문의 화면에서 발송 확정)</option>
+        <option value="auto" {{ "selected" if editing and watch.auto_chat_mode == "auto" else "" }}>완전 자동 (상한 내 자동 발송)</option>
+      </select>
+    </label>
+    <label>자동문의 임계 <input type="number" name="auto_chat_threshold" min="0" max="100"
+      value="{{ watch.auto_chat_threshold if editing and watch.auto_chat_threshold is not none else '' }}" placeholder="비우면 알림임계+20"></label>
+    <label>구매 의사 가격 <input type="number" name="auto_chat_price" min="0" step="1000"
+      value="{{ watch.auto_chat_price if editing and watch.auto_chat_price is not none else '' }}"> 원</label>
+    <p style="font-size:12px;margin:4px 0">완전 자동 발송은 서버 설정(<code>autochat.enabled</code>)과 본인 로그인 세션이 있어야 실제로 나갑니다. 발송 상한은 서버 설정을 따릅니다.</p>
+  </fieldset>
+
+  <button>{{ "저장" if editing else "⑤ 등록" }}</button>
 </form>
 
 <script>
@@ -60,5 +82,6 @@ function showAttrs() {
   const el = document.getElementById('attrs-' + option.dataset.category);
   if (el) el.style.display = 'block';
 }
+showAttrs();
 </script>
 {% endblock %}

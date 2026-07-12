@@ -36,6 +36,17 @@ collect:
   request_delay_max_seconds: 5
   max_requests_per_minute: 10
 
+autochat:                 # 자동 채팅 (FR-D6) — 완전 자동 원안. 계정 제재 리스크 인지 필요
+  enabled: false          # true여야 auto 모드 문의가 실제 발송됨
+  dry_run: true           # true면 입력창까지만(전송 안 함) — 셀렉터 검증용. 검증 후 false
+  hourly_limit: 2         # 발송 상한 (계정 보호)
+  daily_limit: 5
+  headless: true
+  profile_dir: chat_profiles   # `joongo-notify chat-login <platform>`으로 로그인 세션 저장
+  # 사전 준비: 1) chat-login으로 각 플랫폼 로그인  2) data/chat_selectors.yaml 셀렉터 채우기
+  #           3) dry_run으로 검증  4) dry_run=false + enabled=true
+
 web:
   host: 127.0.0.1
   port: 8320
+  base_url: ""            # 외부 접속 주소 (미설정 시 host:port). 알림 승인 링크에 사용

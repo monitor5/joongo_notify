@@ -1,0 +1,33 @@
+# 자동 채팅(FR-D6) 플랫폼별 UI 셀렉터.
+#
+# ⚠️ 아래 값은 자리표시자다. 실제 채팅 UI는 로그인 상태에서만 보이므로,
+#    본인 계정으로 `joongo-notify chat-login <platform>` 후 브라우저 개발자 도구로
+#    실제 셀렉터를 확인해 채워야 한다. 채워지기 전에는 autochat.enabled=false 유지.
+#
+# 필드:
+#   logged_in_marker : 로그인 상태에서만 존재하는 요소 (없으면 발송 거부)
+#   chat_button      : 매물 페이지의 "채팅하기/문의" 버튼
+#   message_input    : 메시지 입력창
+#   send_button      : 전송 버튼
+#   sent_marker      : (선택) 전송 완료 확인 요소
+
+bunjang:
+  logged_in_marker: null      # 예: "a[href*='mypage']"
+  chat_button: null           # 예: "button:has-text('번개톡 문의')"
+  message_input: null         # 예: "textarea[placeholder*='메시지']"
+  send_button: null           # 예: "button:has-text('전송')"
+  sent_marker: null
+
+daangn:
+  logged_in_marker: null
+  chat_button: null
+  message_input: null
+  send_button: null
+  sent_marker: null
+
+joongna:
+  logged_in_marker: null
+  chat_button: null
+  message_input: null
+  send_button: null
+  sent_marker: null
