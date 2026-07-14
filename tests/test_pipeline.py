@@ -3,7 +3,7 @@ import pytest
 
 from joongo_notify.adapters.base import RawListing
 from joongo_notify.models import Watch, WatchCondition
-from joongo_notify.notify.base import ConsoleNotifier
+from joongo_notify.notify.base import LogNotifier
 from joongo_notify.pipeline.runner import run_watch_cycle
 
 
@@ -70,7 +70,7 @@ async def _run(watch, items, db, config, adapter=None):
     watch_id = db.insert_watch(watch)
     watch.id = watch_id
     adapter = adapter or FakeAdapter(items)
-    notifier = ConsoleNotifier()
+    notifier = LogNotifier()
     catalog = load_catalog(config.data_dir)
     stats = await run_watch_cycle(watch, [adapter], catalog, db, config, notifier)
     return stats, notifier, adapter
@@ -116,7 +116,7 @@ async def test_no_duplicate_notification_on_second_run(db, config):
     from joongo_notify.catalog import load_catalog
 
     catalog = load_catalog(config.data_dir)
-    notifier2 = ConsoleNotifier()
+    notifier2 = LogNotifier()
     stats2 = await run_watch_cycle(
         watch, [FakeAdapter([GOOD])], catalog, db, config, notifier2
     )
@@ -134,7 +134,7 @@ async def test_adapter_failure_isolated_and_alerted(db, config):
     failing = FakeAdapter([], fail=True)
     healthy = FakeAdapter([GOOD])
     healthy.platform = "fake-healthy"  # 실패 카운터가 플랫폼별임을 반영
-    notifier = ConsoleNotifier()
+    notifier = LogNotifier()
     from joongo_notify.catalog import load_catalog
 
     catalog = load_catalog(config.data_dir)
@@ -146,7 +146,7 @@ async def test_adapter_failure_isolated_and_alerted(db, config):
     assert any("fake" in m and "연속 실패" in m for m in notifier.sent)
 
 
-class FlakyNotifier(ConsoleNotifier):
+class FlakyNotifier(LogNotifier):
     """처음 N회 발송 실패 후 성공 — 알림 재시도 검증용."""
 
     def __init__(self, fail_times=1):
@@ -156,7 +156,7 @@ class FlakyNotifier(ConsoleNotifier):
     async def send_match(self, watch, listing, match):
         if self.fail_times > 0:
             self.fail_times -= 1
-            raise RuntimeError("telegram down")
+            raise RuntimeError("push channel down")
         await super().send_match(watch, listing, match)
 
 
@@ -189,7 +189,7 @@ async def test_empty_search_counts_as_adapter_failure(db, config):
     catalog = load_catalog(config.data_dir)
     watch = make_watch()
     watch.id = db.insert_watch(watch)
-    notifier = ConsoleNotifier()
+    notifier = LogNotifier()
     empty = FakeAdapter([])
     await run_watch_cycle(watch, [empty], catalog, db, config, notifier)
     await run_watch_cycle(watch, [empty], catalog, db, config, notifier)
@@ -219,7 +219,7 @@ async def test_detail_failure_defers_analysis_until_fetched(db, config):
     watch = make_watch()
     watch.id = db.insert_watch(watch)
     adapter = FlakyDetailAdapter([GOOD], detail_fail_times=1)
-    notifier = ConsoleNotifier()
+    notifier = LogNotifier()
 
     stats1 = await run_watch_cycle(watch, [adapter], catalog, db, config, notifier)
     assert stats1.analyzed == 0  # 상세 실패 → 분석 보류 (제목만 리포트 금지)
@@ -243,7 +243,7 @@ async def test_detail_budget_shared_across_adapters(db, config):
     a1 = FakeAdapter([GOOD])
     a2 = FakeAdapter([{**GOOD, "id": "200"}])
     a2.platform = "fake2"
-    await run_watch_cycle(watch, [a1, a2], catalog, db, config, ConsoleNotifier())
+    await run_watch_cycle(watch, [a1, a2], catalog, db, config, LogNotifier())
     assert a1.detail_calls + a2.detail_calls == 1
 
 
@@ -258,5 +258,5 @@ async def test_detail_fetched_only_for_new(db, config):
 
     catalog = load_catalog(config.data_dir)
     adapter2 = FakeAdapter([GOOD])
-    await run_watch_cycle(watch, [adapter2], catalog, db, config, ConsoleNotifier())
+    await run_watch_cycle(watch, [adapter2], catalog, db, config, LogNotifier())
     assert adapter2.detail_calls == 0

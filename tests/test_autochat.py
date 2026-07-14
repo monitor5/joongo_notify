@@ -51,7 +51,7 @@ def test_template_no_questions_when_all_known():
 @pytest.mark.asyncio
 async def test_enqueue_approve_mode(db, config):
     from joongo_notify.catalog import load_catalog
-    from joongo_notify.notify.base import ConsoleNotifier
+    from joongo_notify.notify.base import LogNotifier
     from joongo_notify.pipeline.runner import run_watch_cycle
     from tests.test_pipeline import GOOD, FakeAdapter
 
@@ -59,7 +59,7 @@ async def test_enqueue_approve_mode(db, config):
     watch = make_watch(mode="approve")
     watch.conditions = [WatchCondition("burn_in", ["없음"], required=True)]
     watch.id = db.insert_watch(watch)
-    await run_watch_cycle(watch, [FakeAdapter([GOOD])], catalog, db, config, ConsoleNotifier())
+    await run_watch_cycle(watch, [FakeAdapter([GOOD])], catalog, db, config, LogNotifier())
     pending = db.chats_by_status("pending")
     assert len(pending) == 1
     assert pending[0].platform == "fake"
@@ -69,7 +69,7 @@ async def test_enqueue_approve_mode(db, config):
 @pytest.mark.asyncio
 async def test_enqueue_auto_mode_queues(db, config):
     from joongo_notify.catalog import load_catalog
-    from joongo_notify.notify.base import ConsoleNotifier
+    from joongo_notify.notify.base import LogNotifier
     from joongo_notify.pipeline.runner import run_watch_cycle
     from tests.test_pipeline import GOOD, FakeAdapter
 
@@ -77,14 +77,14 @@ async def test_enqueue_auto_mode_queues(db, config):
     watch = make_watch(mode="auto")
     watch.conditions = [WatchCondition("burn_in", ["없음"], required=True)]
     watch.id = db.insert_watch(watch)
-    await run_watch_cycle(watch, [FakeAdapter([GOOD])], catalog, db, config, ConsoleNotifier())
+    await run_watch_cycle(watch, [FakeAdapter([GOOD])], catalog, db, config, LogNotifier())
     assert len(db.chats_by_status("queued")) == 1
 
 
 @pytest.mark.asyncio
 async def test_no_chat_below_chat_threshold(db, config):
     from joongo_notify.catalog import load_catalog
-    from joongo_notify.notify.base import ConsoleNotifier
+    from joongo_notify.notify.base import LogNotifier
     from joongo_notify.pipeline.runner import run_watch_cycle
     from tests.test_pipeline import FakeAdapter
 
@@ -95,7 +95,7 @@ async def test_no_chat_below_chat_threshold(db, config):
     watch = make_watch(mode="auto", threshold=60, chat_threshold=95)
     watch.conditions = [WatchCondition("burn_in", ["없음"], required=True)]
     watch.id = db.insert_watch(watch)
-    await run_watch_cycle(watch, [FakeAdapter([item])], catalog, db, config, ConsoleNotifier())
+    await run_watch_cycle(watch, [FakeAdapter([item])], catalog, db, config, LogNotifier())
     assert db.chats_by_status("queued") == []
 
 
@@ -152,6 +152,27 @@ async def test_send_rejects_undefined_selectors():
     chat = ChatMessage(1, 1, 1, "bunjang", "https://x", "안녕하세요")
     with pytest.raises(RuntimeError, match="셀렉터"):
         await sender.send(chat)
+
+
+def test_selector_gaps():
+    """인수 검증: 비어 있는 필수 셀렉터 키를 정확히 집어낸다."""
+    from joongo_notify.autochat.sender import selector_gaps
+
+    assert selector_gaps(None) == ["chat_button", "message_input", "send_button"]
+    assert selector_gaps({}) == ["chat_button", "message_input", "send_button"]
+    partial = {"chat_button": "button", "message_input": None, "send_button": ""}
+    assert selector_gaps(partial) == ["message_input", "send_button"]
+    full = {"chat_button": "a", "message_input": "b", "send_button": "c"}
+    assert selector_gaps(full) == []
+
+
+@pytest.mark.asyncio
+async def test_check_selectors_reports_gaps_without_browser():
+    """셀렉터가 비면 브라우저를 띄우지 않고 gap을 보고한다 (인수 검증 안전)."""
+    sender = ChatSender(AutoChatConfig(), selectors={"bunjang": {"chat_button": "x"}})
+    result = await sender.check_selectors("bunjang", "https://x/1")
+    assert "message_input" in result["error"]
+    assert result["logged_in"] is None  # 페이지 접근 자체를 안 함
 
 
 def test_enqueue_dedup(db):

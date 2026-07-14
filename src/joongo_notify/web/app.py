@@ -7,7 +7,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from statistics import median
-from urllib.parse import quote, urlparse
+from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -17,7 +17,7 @@ from ..catalog import Catalog, load_catalog
 from ..config import Config, load_config
 from ..db import Database
 from ..models import Watch, WatchCondition, utcnow_iso
-from ..scheduler import build_notifier, scheduler_loop
+from ..scheduler import scheduler_loop
 from .auth import LoginGuard, SessionManager, verify_password
 
 logger = logging.getLogger("joongo_notify")
@@ -304,31 +304,6 @@ def create_app(
     async def delete_watch(watch_id: int, user: str = Depends(require_login)):
         db.delete_watch(watch_id)
         return RedirectResponse("/", status_code=303)
-
-    # ---- 설정 (FR-A1b: 텔레그램 채널 연결) --------------------------------
-    @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request, user: str = Depends(require_login)):
-        return templates.TemplateResponse(
-            request, "settings.html",
-            {
-                "chat_id": db.get_setting("telegram_chat_id", config.telegram.chat_id),
-                "telegram_enabled": config.telegram.enabled and bool(config.telegram.token),
-                "message": request.query_params.get("message"),
-            },
-        )
-
-    @app.post("/settings/telegram")
-    async def save_telegram(user: str = Depends(require_login), chat_id: str = Form("")):
-        db.set_setting("telegram_chat_id", chat_id.strip())
-        message = "저장되었습니다"
-        if config.telegram.enabled and config.telegram.token and chat_id.strip():
-            notifier = build_notifier(config, db)
-            try:
-                await notifier.send_operator_alert("✅ joongo_notify 알림 연결 테스트")
-                message = "저장 및 테스트 알림 발송 완료"  # FR-A1b AC
-            except Exception as exc:
-                message = f"저장됨 — 테스트 발송 실패: {exc}"
-        return RedirectResponse(f"/settings?message={quote(message)}", status_code=303)
 
     # ---- 매물 이력 (웹 UI 고도화) ----------------------------------------
     @app.get("/listings", response_class=HTMLResponse)

@@ -11,8 +11,7 @@ from .catalog import Catalog
 from .config import Config
 from .db import Database
 from .models import Watch
-from .notify.base import ConsoleNotifier, Notifier
-from .notify.telegram import TelegramNotifier
+from .notify.base import LogNotifier, Notifier
 from .pipeline.runner import run_watch_cycle
 
 logger = logging.getLogger("joongo_notify")
@@ -39,10 +38,8 @@ def build_adapters(config: Config) -> list[CollectorAdapter]:
 
 
 def build_notifier(config: Config, db: Database) -> Notifier:
-    web_base = config.web.base_url or ""
-    if config.telegram.enabled and config.telegram.token:
-        return TelegramNotifier(config.telegram, db, web_base=web_base)
-    return ConsoleNotifier(web_base=web_base)
+    # 웹 대시보드가 알림 표면 — Notifier는 로그로 남긴다 (푸시 채널 없음)
+    return LogNotifier(web_base=config.web.base_url or "")
 
 
 def is_due(watch: Watch, now: datetime, min_interval: int) -> bool:

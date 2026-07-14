@@ -51,7 +51,7 @@ cp config.example.yaml config.yaml
 - **LLM 분석**: 기본은 온톨로지 기반 휴리스틱 추출기. Ollama를 띄우고 `llm.enabled: true` + `llm.model` 지정 시 LLM 추출로 전환 (실패 시 휴리스틱 폴백).
 - **VL 사진 검증**: `vl.enabled: true` + `vl.model` 지정 시, Watch 조건의 시각검증가능 속성(번인·기스 등)을 매물 사진으로 검증. 본문에 없던 정보는 📷사진판정으로 채우고, 본문과 사진이 다르면 ⚠️상충 표시 (최종 판단은 사람).
 - **당근마켓 지역**: Watch 지역에 당근 웹 주소의 `?in=` 값("역삼동-6035" 형식)을 넣으면 해당 동네 피드를 수집. 일반 텍스트 지역은 번개장터·중고나라 텍스트 필터로만 동작.
-- **텔레그램 알림**: `telegram.enabled: true` + 토큰 설정 후, 웹 [설정]에서 chat_id 등록(테스트 발송 포함). 미설정 시 콘솔 출력.
+- **알림 표면**: 조건 부합 매물은 **웹 대시보드**의 "최근 매칭"과 매칭 상세에서 확인합니다(푸시 채널 없음). 운영자 경고(어댑터 장애 등)는 서버 로그와 `/health`에 노출됩니다.
 - **제품/조건 추가**: `data/products.yaml`(별칭 사전), `data/categories.yaml`(상태 속성) 수정만으로 가능 — 코드 변경 불필요.
 
 ## 자동 채팅 (FR-D6, Phase 3)
@@ -60,14 +60,16 @@ cp config.example.yaml config.yaml
 
 ```bash
 .venv/bin/pip install -e ".[autochat]" && playwright install chromium
-.venv/bin/joongo-notify chat-login bunjang   # 브라우저에서 직접 로그인 → 세션 저장
-# data/chat_selectors.yaml에 각 플랫폼 채팅 UI 셀렉터 기입 (로그인 상태에서 확인)
-# config.yaml: autochat.dry_run=true 로 입력창까지 검증 → 문제없으면 dry_run=false, enabled=true
+.venv/bin/joongo-notify chat-login bunjang    # ① 브라우저에서 직접 로그인 → 세션 저장
+# ② data/chat_selectors.yaml에 각 플랫폼 채팅 UI 셀렉터 기입 (로그인 상태에서 확인)
+.venv/bin/joongo-notify chat-check bunjang "<매물URL>" --headed  # ③ 발송 없이 셀렉터·로그인 검증
+# ④ config.yaml: dry_run=true로 통합 검증 → 문제없으면 dry_run=false, enabled=true
 ```
 
 발송 상한(기본 시간당 2건·일 5건)과 dry-run 기본값으로 계정 리스크를 통제합니다.
+전체 인수 절차: **[docs/33-autochat-acceptance.md](docs/33-autochat-acceptance.md)**.
 
 ## 현재 상태
 
 **Phase 3 진행 중** — 자동 채팅 RPA(FR-D6), 웹 UI 고도화(Watch 수정·매물 이력·매칭 상세·시세 그래프·문의 큐·피드백) 완료. 3플랫폼 수집·분석·알림 전체 스택 동작 검증 완료.
-남은 항목: 카카오 OAuth(보류), 카테고리 확장.
+남은 항목: 카테고리 확장. (카카오 OAuth·텔레그램 푸시는 범위에서 제외 — 인증은 자체 로그인, 알림은 웹 대시보드)

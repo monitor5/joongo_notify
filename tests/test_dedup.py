@@ -58,14 +58,14 @@ async def test_duplicate_suppressed_when_original_processed_later(db, config):
     먼저 알림됨. 이후 A가 분석 완료돼도 A.dup_of는 None이지만 그룹 알림 이력으로 억제.
     """
     from joongo_notify.catalog import load_catalog
-    from joongo_notify.notify.base import ConsoleNotifier
+    from joongo_notify.notify.base import LogNotifier
     from joongo_notify.pipeline.runner import run_watch_cycle
     from tests.test_pipeline import FakeAdapter, FlakyDetailAdapter, make_watch
 
     catalog = load_catalog(config.data_dir)
     watch = make_watch()
     watch.id = db.insert_watch(watch)
-    notifier = ConsoleNotifier()
+    notifier = LogNotifier()
 
     item_a = {"id": "A1", "title": "아이폰 14 프로 256 팝니다", "price": 900000,
               "description": "번인 없습니다. 풀박스 구성입니다."}
@@ -88,7 +88,7 @@ async def test_duplicate_suppressed_when_original_processed_later(db, config):
 async def test_duplicate_notification_suppressed(db, config):
     """중복 매물은 같은 Watch로 두 번 알림되지 않는다 (FR-C4 AC)."""
     from joongo_notify.catalog import load_catalog
-    from joongo_notify.notify.base import ConsoleNotifier
+    from joongo_notify.notify.base import LogNotifier
     from joongo_notify.pipeline.runner import run_watch_cycle
     from tests.test_pipeline import FakeAdapter, make_watch
 
@@ -98,7 +98,7 @@ async def test_duplicate_notification_suppressed(db, config):
 
     item = {"id": "100", "title": "아이폰 14 프로 256 팝니다", "price": 900000,
             "description": "번인 없습니다. 풀박스 구성입니다."}
-    notifier = ConsoleNotifier()
+    notifier = LogNotifier()
     await run_watch_cycle(watch, [FakeAdapter([item])], catalog, db, config, notifier)
     assert len(notifier.sent) == 1
 

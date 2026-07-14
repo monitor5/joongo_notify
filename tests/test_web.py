@@ -38,7 +38,7 @@ def test_password_hash_roundtrip():
 
 async def test_requires_login_redirect(client):
     """FR-A1 AC: 미로그인 → 로그인 페이지로."""
-    for path in ["/", "/watches/new", "/settings", "/health"]:
+    for path in ["/", "/watches/new", "/listings", "/prices", "/chats", "/health"]:
         resp = await client.get(path)
         assert resp.status_code == 303, path
         assert resp.headers["location"] == "/login"
@@ -112,11 +112,11 @@ async def test_threshold_zero_preserved(logged_in, db):
 
 
 def test_get_setting_empty_falls_back_to_default(db):
-    """빈 설정값이 config 기본값을 가리지 않는다."""
-    db.set_setting("telegram_chat_id", "")
-    assert db.get_setting("telegram_chat_id", "default-id") == "default-id"
-    db.set_setting("telegram_chat_id", "12345")
-    assert db.get_setting("telegram_chat_id", "default-id") == "12345"
+    """빈 설정값이 기본값을 가리지 않는다 (제네릭 KV 저장소)."""
+    db.set_setting("some_key", "")
+    assert db.get_setting("some_key", "default-val") == "default-val"
+    db.set_setting("some_key", "12345")
+    assert db.get_setting("some_key", "default-val") == "12345"
 
 
 def test_login_guard_is_per_client():

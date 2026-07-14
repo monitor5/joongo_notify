@@ -45,6 +45,16 @@ def profile_dir(config: AutoChatConfig, platform: str) -> Path:
     return Path(config.profile_dir) / platform
 
 
+REQUIRED_SELECTOR_KEYS = ("chat_button", "message_input", "send_button")
+
+
+def selector_gaps(platform_sel: dict | None) -> list[str]:
+    """플랫폼 셀렉터에서 비어 있는 필수 키 목록. 인수 검증용."""
+    if not platform_sel:
+        return list(REQUIRED_SELECTOR_KEYS)
+    return [k for k in REQUIRED_SELECTOR_KEYS if not platform_sel.get(k)]
+
+
 def within_send_limits(db: Database, config: AutoChatConfig) -> bool:
     now = datetime.now(timezone.utc)
     hour_ago = (now - timedelta(hours=1)).isoformat(timespec="seconds")
@@ -84,6 +94,48 @@ class ChatSender:
                 await self._drive_chat(page, platform_sel, chat.message)
             finally:
                 await context.close()
+
+    async def check_selectors(self, platform: str, listing_url: str) -> dict:
+        """인수 검증: 실제 매물 페이지에서 로그인·각 셀렉터 해석 여부를 확인한다.
+        발송은 하지 않는다. 결과 dict: {logged_in, chat_button, message_input, send_button, error}.
+        """
+        result = {"platform": platform, "logged_in": None, "error": ""}
+        platform_sel = self.selectors.get(platform)
+        gaps = selector_gaps(platform_sel)
+        if gaps:
+            result["error"] = f"셀렉터 미기입: {', '.join(gaps)}"
+            return result
+
+        from playwright.async_api import async_playwright
+
+        profile = profile_dir(self.config, platform)
+        profile.mkdir(parents=True, exist_ok=True)
+        timeout = self.config.send_timeout_seconds * 1000
+        async with async_playwright() as pw:
+            context = await pw.chromium.launch_persistent_context(
+                str(profile), headless=self.config.headless
+            )
+            try:
+                page = await context.new_page()
+                await page.goto(listing_url, timeout=timeout)
+                marker = platform_sel.get("logged_in_marker")
+                if marker:
+                    result["logged_in"] = await page.query_selector(marker) is not None
+                # 채팅 버튼 클릭 후 입력창·전송 버튼이 나타나는지 (전송은 안 함)
+                for key in ("chat_button", "message_input", "send_button"):
+                    try:
+                        if key == "chat_button":
+                            await page.click(platform_sel[key], timeout=timeout)
+                        else:
+                            await page.wait_for_selector(platform_sel[key], timeout=timeout)
+                        result[key] = True
+                    except Exception as exc:  # noqa: BLE001
+                        result[key] = False
+                        result["error"] = f"{key} 해석 실패: {str(exc)[:80]}"
+                        break
+            finally:
+                await context.close()
+        return result
 
     async def _drive_chat(self, page, sel: dict, message: str) -> None:
         timeout = self.config.send_timeout_seconds * 1000

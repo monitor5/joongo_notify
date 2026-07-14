@@ -29,6 +29,12 @@ def main(argv: list[str] | None = None) -> int:
         "chat-login", help="자동 채팅용 플랫폼 로그인 세션 저장 (FR-D6)"
     )
     login.add_argument("platform", choices=["bunjang", "daangn", "joongna"])
+    check = sub.add_parser(
+        "chat-check", help="자동 채팅 셀렉터·로그인 인수 검증 (발송 안 함)"
+    )
+    check.add_argument("platform", choices=["bunjang", "daangn", "joongna"])
+    check.add_argument("url", help="검증에 사용할 실제 매물 URL")
+    check.add_argument("--headed", action="store_true", help="브라우저 창을 띄워 확인")
 
     args = parser.parse_args(argv)
 
@@ -63,6 +69,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "chat-login":
         return _chat_login(config, args.platform)
+
+    if args.command == "chat-check":
+        return _chat_check(config, args.platform, args.url, headed=args.headed)
 
     if args.command == "stats":
         db = Database(config.db_path)
@@ -112,6 +121,46 @@ def _chat_login(config, platform: str) -> int:
 
     asyncio.run(run())
     return 0
+
+
+def _chat_check(config, platform: str, url: str, headed: bool = False) -> int:
+    """셀렉터·로그인 인수 검증 — 발송 없이 각 단계가 해석되는지 확인."""
+    import asyncio
+
+    from .autochat.sender import ChatSender
+
+    cfg = config.autochat.model_copy(update={"headless": not headed})
+    sender = ChatSender(cfg)
+
+    async def run() -> dict:
+        return await sender.check_selectors(platform, url)
+
+    try:
+        result = asyncio.run(run())
+    except ImportError:
+        print("playwright 미설치 — `pip install -e '.[autochat]' && playwright install chromium`",
+              file=sys.stderr)
+        return 1
+
+    def mark(v):
+        return "✅" if v is True else ("❌" if v is False else "―")
+
+    print(f"[{platform}] 셀렉터 인수 검증 결과")
+    print(f"  로그인 세션   : {mark(result.get('logged_in'))}")
+    print(f"  채팅 버튼     : {mark(result.get('chat_button'))}")
+    print(f"  메시지 입력창 : {mark(result.get('message_input'))}")
+    print(f"  전송 버튼     : {mark(result.get('send_button'))}  (검증만 — 클릭 안 함)")
+    if result.get("error"):
+        print(f"  ⚠️  {result['error']}")
+        return 1
+    ok = all(result.get(k) for k in ("chat_button", "message_input", "send_button"))
+    if result.get("logged_in") is False:
+        print("  → 로그인 필요: joongo-notify chat-login " + platform)
+        return 1
+    if ok:
+        print("  → 모든 셀렉터 정상. dry_run:false 로 전환하면 실발송됩니다.")
+        return 0
+    return 1
 
 
 if __name__ == "__main__":

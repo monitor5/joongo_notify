@@ -38,12 +38,6 @@ class VLConfig(BaseModel):
     timeout_seconds: float = 180.0
 
 
-class TelegramConfig(BaseModel):
-    enabled: bool = False
-    token: str = ""
-    chat_id: str = ""
-
-
 class CollectConfig(BaseModel):
     # NFR-3 / 10번 문서 §8: 저빈도 확정 전제
     platforms: list[str] = ["bunjang", "daangn", "joongna"]
@@ -96,7 +90,6 @@ class Config(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     llm: LLMConfig = Field(default_factory=LLMConfig)
     vl: VLConfig = Field(default_factory=VLConfig)
-    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
     collect: CollectConfig = Field(default_factory=CollectConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     autochat: AutoChatConfig = Field(default_factory=AutoChatConfig)
@@ -113,8 +106,6 @@ _ENV_OVERRIDES = {
     "JOONGO_LLM_MODEL": ("llm", "model"),
     "JOONGO_VL_BASE_URL": ("vl", "base_url"),
     "JOONGO_VL_MODEL": ("vl", "model"),
-    "JOONGO_TELEGRAM_TOKEN": ("telegram", "token"),
-    "JOONGO_TELEGRAM_CHAT_ID": ("telegram", "chat_id"),
 }
 
 
